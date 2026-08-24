@@ -961,7 +961,17 @@ chrome.runtime.onMessage.addListener(
                         });
 
                         const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
-                        const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${message.filename}`;
+
+                        // O Supabase Storage rejeita chaves com espaco/acento mesmo
+                        // com URL-encoding (valida a chave decodificada). O nome
+                        // original (com espacos/acentos) continua guardado em
+                        // audio_files.filename para exibicao.
+                        const nomeStorageSeguro = message.filename
+                            .normalize("NFD")
+                            .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+                            .replace(/[^A-Za-z0-9._-]/g, "_");
+
+                        const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${nomeStorageSeguro}`;
 
                         await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
 
