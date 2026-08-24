@@ -179,6 +179,28 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
+    // HISTÓRICO DE ENVIOS
+    // ============================================================
+
+    const historyToggle = document.getElementById("historyToggle");
+    const historyList = document.getElementById("historyList");
+
+    if (historyToggle && historyList) {
+
+        historyToggle.addEventListener("click", () => {
+
+            const expandido =
+                historyToggle.getAttribute("aria-expanded") === "true";
+
+            historyToggle.setAttribute("aria-expanded", String(!expandido));
+            historyList.classList.toggle("is-collapsed", expandido);
+        });
+    }
+
+    await carregarHistorico();
+
+
+    // ============================================================
     // ESCUTAR ATUALIZAÇÕES
     // ============================================================
 
@@ -227,6 +249,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                     if (message.stage === "done") {
                         mostrarSucessoSupabase();
+                        carregarHistorico();
                     }
 
                     if (message.stage === "error") {
@@ -636,6 +659,117 @@ function mostrarSucessoSupabase() {
         }
 
     }, 5000);
+}
+
+
+// ================================================================
+// HISTÓRICO DE ENVIOS
+// ================================================================
+
+const HISTORY_STATUS_LABEL = {
+    uploaded: "Enviado",
+    processing: "Transcrevendo",
+    completed: "Concluído",
+    failed: "Falhou"
+};
+
+async function carregarHistorico() {
+
+    const listElement = document.getElementById("historyList");
+
+    if (!listElement) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await chrome.runtime.sendMessage({
+                action: "get-upload-history"
+            });
+
+        const history = response?.history || [];
+
+        if (history.length === 0) {
+
+            listElement.innerHTML =
+                '<div class="history-empty">Nenhuma aula enviada ainda.</div>';
+
+            return;
+        }
+
+        listElement.innerHTML = history
+            .map(renderHistoryItem)
+            .join("");
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao carregar histórico:",
+            error
+        );
+
+        listElement.innerHTML =
+            '<div class="history-empty">Não foi possível carregar o histórico.</div>';
+    }
+}
+
+function renderHistoryItem(item) {
+
+    const titulo = item.lessons
+        ? `${item.lessons.lesson_number} — ${item.lessons.title}`
+        : item.filename;
+
+    const meta = [
+        item.courses?.name,
+        item.modules ? `Módulo ${item.modules.module_number}` : null
+    ]
+        .filter(Boolean)
+        .join(" · ");
+
+    const dataFormatada = formatarDataHora(item.created_at);
+
+    const statusLabel =
+        HISTORY_STATUS_LABEL[item.status] || item.status;
+
+    return `
+        <div class="history-item">
+            <div class="history-item-title">${escapeHtml(titulo)}</div>
+            ${meta ? `<div class="history-item-meta">${escapeHtml(meta)}</div>` : ""}
+            <div class="history-item-date">
+                <span>${dataFormatada}</span>
+                <span class="history-item-status status-${item.status}">${escapeHtml(statusLabel)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function formatarDataHora(isoString) {
+
+    if (!isoString) {
+        return "—";
+    }
+
+    const data = new Date(isoString);
+
+    if (Number.isNaN(data.getTime())) {
+        return "—";
+    }
+
+    const dataParte = data.toLocaleDateString("pt-BR");
+    const horaParte = data.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+
+    return `${dataParte} às ${horaParte}`;
+}
+
+function escapeHtml(texto) {
+
+    const div = document.createElement("div");
+    div.textContent = texto ?? "";
+    return div.innerHTML;
 }
 
 

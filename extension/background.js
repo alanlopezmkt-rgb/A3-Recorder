@@ -1164,6 +1164,43 @@ chrome.runtime.onMessage.addListener(
 
 
         // ========================================================
+        // HISTORICO DE ENVIOS DO USUARIO
+        // ========================================================
+
+        if (message.action === "get-upload-history") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+                    const user = await A3Session.getCurrentUser();
+
+                    if (!token || !user) {
+                        sendResponse({ history: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const history = await A3Supabase.restSelect(
+                        "audio_files",
+                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name)&uploaded_by=eq.${user.id}&order=created_at.desc&limit=20`,
+                        token
+                    );
+
+                    sendResponse({ history });
+
+                } catch (error) {
+
+                    sendResponse({ history: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
         // LISTAR MODULOS DE UM CURSO
         // ========================================================
 

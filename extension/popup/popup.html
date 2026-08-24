@@ -106,6 +106,27 @@
             <span id="recordLabel" class="record-label">GRAVAR</span>
         </button>
 
+        <!-- HISTORICO -->
+        <div class="field">
+
+            <button
+                id="historyToggle"
+                type="button"
+                class="history-toggle"
+                aria-expanded="false"
+            >
+                <span>HISTÓRICO DE ENVIOS</span>
+                <svg class="history-toggle-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
+
+            <div id="historyList" class="history-list is-collapsed">
+                <div class="history-empty">Carregando...</div>
+            </div>
+
+        </div>
+
     </div>
 
     <script src="popup.js"></script>
