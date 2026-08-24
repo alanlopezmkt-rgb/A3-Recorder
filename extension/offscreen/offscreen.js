@@ -371,7 +371,7 @@ async function finalizarGravacao() {
             recordingTitle
 
                 .replace(
-                    /[<>:"/\\|?*]/g,
+                    /[<>:"/\\|?*#%]/g,
                     ""
                 )
 
@@ -388,6 +388,13 @@ async function finalizarGravacao() {
             filename =
                 "aula";
         }
+
+
+        // Timestamp evita colisão de nome quando a mesma aula é gravada
+        // por usuários diferentes (ou pelo mesmo usuário em momentos
+        // diferentes) — sem isso, o storage_path no Supabase colidiria.
+        filename +=
+            `_${Date.now()}`;
 
 
         filename +=

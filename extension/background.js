@@ -871,7 +871,20 @@ chrome.runtime.onMessage.addListener(
                             return existing[0];
                         });
 
-                        const audioBlob = new Blob(message.chunks, { type: "audio/webm" });
+                        // message.chunks são strings base64 (contrato com o Native Host, NÃO alterar
+                        // o que é passado para salvarAudioNative). Para o upload ao Supabase, os
+                        // bytes reais do áudio precisam ser decodificados antes de montar o Blob,
+                        // senão o arquivo enviado é texto base64 em vez do áudio binário.
+                        const audioByteArrays = message.chunks.map((chunk) => {
+                            const binary = atob(chunk);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            return bytes;
+                        });
+
+                        const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
                         const storagePath = `${selection.selectedCourseId}/${selection.selectedModuleId}/${lessonRow.id}/${message.filename}`;
 
                         await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);

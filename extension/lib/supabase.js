@@ -134,8 +134,15 @@ const A3Supabase = (() => {
     }
 
     async function uploadToStorage(bucket, path, blob, accessToken) {
+        // Codifica cada segmento do path (mas não as barras) para que
+        // caracteres especiais em URL (#, %, etc.) não quebrem a requisição.
+        const encodedPath = path
+            .split("/")
+            .map((segment) => encodeURIComponent(segment))
+            .join("/");
+
         const response = await fetch(
-            `${A3OS_CONFIG.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`,
+            `${A3OS_CONFIG.SUPABASE_URL}/storage/v1/object/${bucket}/${encodedPath}`,
             {
                 method: "POST",
                 headers: {
