@@ -268,6 +268,27 @@ document.addEventListener("DOMContentLoaded", async () => {
                     atualizarInterfaceParado();
                 }
             }
+
+
+            if (message.action === "upload-status") {
+
+                const statusTextElement = document.getElementById("statusText");
+
+                if (statusTextElement) {
+
+                    if (message.stage === "uploading") {
+                        statusTextElement.textContent = "Enviando áudio para o Supabase...";
+                    }
+
+                    if (message.stage === "done") {
+                        statusTextElement.textContent = "Áudio enviado. Aguardando transcrição.";
+                    }
+
+                    if (message.stage === "error") {
+                        mostrarErro(message.error || "Erro ao enviar áudio.");
+                    }
+                }
+            }
         }
     );
 

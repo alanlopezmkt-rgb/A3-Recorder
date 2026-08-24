@@ -826,6 +826,98 @@ chrome.runtime.onMessage.addListener(
                         );
 
 
+                    try {
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "uploading"
+                        });
+
+                        const token = await A3Session.getValidAccessToken();
+                        const user = await A3Session.getCurrentUser();
+
+                        if (!token || !user) {
+                            throw new Error("Sessão expirada. Faça login novamente.");
+                        }
+
+                        const selection = await chrome.storage.local.get([
+                            "selectedCourseId",
+                            "selectedModuleId",
+                            "selectedLessonNumber"
+                        ]);
+
+                        if (
+                            !selection.selectedCourseId ||
+                            !selection.selectedModuleId ||
+                            !selection.selectedLessonNumber
+                        ) {
+                            throw new Error("Selecione curso, módulo e número da aula antes de gravar.");
+                        }
+
+                        const lessonRow = await A3Supabase.restInsert(
+                            "lessons",
+                            {
+                                module_id: selection.selectedModuleId,
+                                lesson_number: parseInt(selection.selectedLessonNumber, 10),
+                                title: currentRecording.title
+                            },
+                            token
+                        ).catch(async () => {
+                            const existing = await A3Supabase.restSelect(
+                                "lessons",
+                                `select=id&module_id=eq.${selection.selectedModuleId}&lesson_number=eq.${parseInt(selection.selectedLessonNumber, 10)}`,
+                                token
+                            );
+                            return existing[0];
+                        });
+
+                        const audioBlob = new Blob(message.chunks, { type: "audio/webm" });
+                        const storagePath = `${selection.selectedCourseId}/${selection.selectedModuleId}/${lessonRow.id}/${message.filename}`;
+
+                        await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
+
+                        const audioFileRow = await A3Supabase.restInsert(
+                            "audio_files",
+                            {
+                                course_id: selection.selectedCourseId,
+                                module_id: selection.selectedModuleId,
+                                lesson_id: lessonRow.id,
+                                uploaded_by: user.id,
+                                storage_path: storagePath,
+                                filename: message.filename,
+                                mime_type: "audio/webm",
+                                file_size: audioBlob.size,
+                                status: "uploaded"
+                            },
+                            token
+                        );
+
+                        await A3Supabase.restInsert(
+                            "transcription_jobs",
+                            {
+                                audio_file_id: audioFileRow.id,
+                                status: "pending"
+                            },
+                            token
+                        );
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "done"
+                        });
+
+                    } catch (uploadError) {
+
+                        console.error("A3-OS: erro no upload para o Supabase:", uploadError);
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "error",
+                            error: uploadError.message
+                        });
+                    }
+
+
                     await salvarEstado({
                         recording: false
                     });
