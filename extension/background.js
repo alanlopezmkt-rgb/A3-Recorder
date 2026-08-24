@@ -935,5 +935,77 @@ chrome.runtime.onMessage.addListener(
 
             return true;
         }
+
+
+        // ========================================================
+        // LISTAR CURSOS
+        // ========================================================
+
+        if (message.action === "get-courses") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ courses: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const courses = await A3Supabase.restSelect(
+                        "courses",
+                        "select=id,name&order=name.asc",
+                        token
+                    );
+
+                    sendResponse({ courses });
+
+                } catch (error) {
+
+                    sendResponse({ courses: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // LISTAR MODULOS DE UM CURSO
+        // ========================================================
+
+        if (message.action === "get-modules") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ modules: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const modules = await A3Supabase.restSelect(
+                        "modules",
+                        `select=id,module_number,name&course_id=eq.${message.courseId}&order=module_number.asc`,
+                        token
+                    );
+
+                    sendResponse({ modules });
+
+                } catch (error) {
+
+                    sendResponse({ modules: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
     }
 );

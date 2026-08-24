@@ -115,6 +115,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
+    // CURSO / MODULO / AULA
+    // ============================================================
+
+    await carregarCursosEModulos();
+
+
+    // ============================================================
     // CARREGAR PASTA
     // ============================================================
 
@@ -330,6 +337,82 @@ async function alternarTema() {
             error
         );
     }
+}
+
+
+// ================================================================
+// CURSO / MODULO / AULA
+// ================================================================
+
+async function carregarCursosEModulos() {
+
+    const courseSelect = document.getElementById("courseSelect");
+    const moduleSelect = document.getElementById("moduleSelect");
+    const lessonNumberInput = document.getElementById("lessonNumberInput");
+
+    if (!courseSelect || !moduleSelect || !lessonNumberInput) {
+        return;
+    }
+
+    const coursesResponse = await chrome.runtime.sendMessage({ action: "get-courses" });
+
+    courseSelect.innerHTML = "";
+
+    (coursesResponse.courses || []).forEach(course => {
+        const option = document.createElement("option");
+        option.value = course.id;
+        option.textContent = course.name;
+        courseSelect.appendChild(option);
+    });
+
+    const saved = await chrome.storage.local.get([
+        "selectedCourseId",
+        "selectedModuleId",
+        "selectedLessonNumber"
+    ]);
+
+    if (saved.selectedCourseId) {
+        courseSelect.value = saved.selectedCourseId;
+    }
+
+    async function carregarModulos() {
+
+        const modulesResponse = await chrome.runtime.sendMessage({
+            action: "get-modules",
+            courseId: courseSelect.value
+        });
+
+        moduleSelect.innerHTML = "";
+
+        (modulesResponse.modules || []).forEach(mod => {
+            const option = document.createElement("option");
+            option.value = mod.id;
+            option.textContent = `${mod.module_number} — ${mod.name}`;
+            moduleSelect.appendChild(option);
+        });
+
+        if (saved.selectedModuleId) {
+            moduleSelect.value = saved.selectedModuleId;
+        }
+
+        await chrome.storage.local.set({ selectedCourseId: courseSelect.value });
+    }
+
+    await carregarModulos();
+
+    if (saved.selectedLessonNumber) {
+        lessonNumberInput.value = saved.selectedLessonNumber;
+    }
+
+    courseSelect.addEventListener("change", carregarModulos);
+
+    moduleSelect.addEventListener("change", async () => {
+        await chrome.storage.local.set({ selectedModuleId: moduleSelect.value });
+    });
+
+    lessonNumberInput.addEventListener("change", async () => {
+        await chrome.storage.local.set({ selectedLessonNumber: lessonNumberInput.value });
+    });
 }
 
 
