@@ -2,6 +2,26 @@ let recording = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
 
+    const userCheck = await chrome.runtime.sendMessage({ action: "get-current-user" });
+
+    if (!userCheck || !userCheck.user) {
+        window.location.href = "../login/login.html";
+        return;
+    }
+
+    const userEmailElement = document.getElementById("userEmail");
+    if (userEmailElement) {
+        userEmailElement.textContent = userCheck.user.email;
+    }
+
+    const logoutButton = document.getElementById("logoutButton");
+    if (logoutButton) {
+        logoutButton.addEventListener("click", async () => {
+            await chrome.runtime.sendMessage({ action: "logout" });
+            window.location.href = "../login/login.html";
+        });
+    }
+
     const titleElement = document.getElementById("title");
     const statusElement = document.getElementById("status");
     const statusTextElement = document.getElementById("statusText");

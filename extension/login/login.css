@@ -1,0 +1,59 @@
+body {
+    font-family: system-ui, sans-serif;
+    width: 300px;
+    margin: 0;
+    padding: 24px;
+    background: #1a1a1a;
+    color: #eee;
+}
+
+.login-box h1 {
+    margin: 0 0 4px 0;
+    font-size: 20px;
+}
+
+.subtitle {
+    margin: 0 0 20px 0;
+    font-size: 12px;
+    color: #999;
+}
+
+label {
+    display: block;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: #ccc;
+}
+
+input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    margin-bottom: 14px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    background: #222;
+    color: #eee;
+}
+
+button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    background: #4f7cff;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.error {
+    color: #ff6b6b;
+    font-size: 12px;
+    margin-top: 10px;
+}

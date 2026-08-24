@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>A3-OS — Login</title>
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+    <div class="login-box">
+        <h1>A3-OS</h1>
+        <p class="subtitle">Entre para gravar e enviar aulas</p>
+
+        <form id="loginForm">
+            <label for="email">E-mail</label>
+            <input type="email" id="email" required autocomplete="username">
+
+            <label for="password">Senha</label>
+            <input type="password" id="password" required autocomplete="current-password">
+
+            <button type="submit" id="loginButton">Entrar</button>
+
+            <p id="loginError" class="error" hidden></p>
+        </form>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>
