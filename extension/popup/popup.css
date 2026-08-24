@@ -1,0 +1,508 @@
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #111111;
+    --surface: #1b1b1b;
+    --surface-hover: #222222;
+    --border: #292929;
+    --border-hover: #3a3a3a;
+
+    --text: #ffffff;
+    --text-secondary: #9a9a9a;
+    --text-tertiary: #6f6f6f;
+
+    --accent-blue: #2f7fd6;
+    --accent-cyan: #22c9dd;
+    --accent-red: #d71920;
+    --accent-red-hover: #ed1c24;
+    --accent-red-active: #8f1116;
+    --accent-green: #2fbf71;
+
+    --focus-ring: #3fd0e6;
+
+    --status-recording-bg: rgba(215, 25, 32, 0.1);
+    --status-recording-border: rgba(215, 25, 32, 0.35);
+    --status-recording-text: #ff9a9d;
+
+    --status-success-bg: rgba(47, 191, 113, 0.1);
+    --status-success-border: rgba(47, 191, 113, 0.35);
+    --status-success-text: #7be8ab;
+
+    --radius: 13px;
+}
+
+:root[data-theme="light"] {
+    --bg: #f4f4f6;
+    --surface: #ffffff;
+    --surface-hover: #eeeef1;
+    --border: #e2e2e6;
+    --border-hover: #cfcfd4;
+
+    --text: #17171a;
+    --text-secondary: #5c5c62;
+    --text-tertiary: #86868c;
+
+    --accent-red-hover: #c8151c;
+
+    --focus-ring: #157a90;
+
+    --status-recording-bg: rgba(215, 25, 32, 0.08);
+    --status-recording-border: rgba(215, 25, 32, 0.3);
+    --status-recording-text: #b8141a;
+
+    --status-success-bg: rgba(31, 158, 92, 0.1);
+    --status-success-border: rgba(31, 158, 92, 0.32);
+    --status-success-text: #1f8f56;
+}
+
+html {
+    margin: 0;
+    padding: 0;
+
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+
+    width: 340px;
+
+    background: var(--bg);
+    color: var(--text);
+
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+
+    -webkit-font-smoothing: antialiased;
+
+    transition:
+        background 0.2s ease,
+        color 0.2s ease;
+}
+
+.container {
+    padding: 18px;
+}
+
+/* ================================================================
+   HEADER
+   ================================================================ */
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    margin-bottom: 20px;
+}
+
+.brand-icon {
+    display: block;
+    flex-shrink: 0;
+
+    width: 46px;
+    height: 46px;
+
+    transition: opacity 0.2s ease;
+}
+
+.brand-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.brand-text h1 {
+    margin: 0;
+
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+
+    color: var(--text);
+}
+
+.brand-tagline {
+    margin: 2px 0 0 0;
+
+    font-size: 11.5px;
+    line-height: 1.3;
+
+    color: var(--text-secondary);
+}
+
+/* ================================================================
+   ALTERNAR TEMA
+   ================================================================ */
+
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    width: 30px;
+    height: 30px;
+
+    padding: 0;
+    margin: 0;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+
+    color: var(--text-secondary);
+
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.theme-toggle:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+    color: var(--text);
+}
+
+.theme-toggle:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.theme-icon {
+    width: 16px;
+    height: 16px;
+
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.theme-icon-moon {
+    fill: currentColor;
+    stroke: none;
+
+    display: none;
+}
+
+:root[data-theme="light"] .theme-icon-sun {
+    display: none;
+}
+
+:root[data-theme="light"] .theme-icon-moon {
+    display: block;
+}
+
+/* ================================================================
+   CAMPOS
+   ================================================================ */
+
+.field {
+    margin-top: 14px;
+}
+
+.field:first-of-type {
+    margin-top: 0;
+}
+
+.label {
+    margin-bottom: 6px;
+
+    font-size: 10.5px;
+    font-weight: 700;
+
+    letter-spacing: 0.7px;
+
+    color: var(--text-secondary);
+}
+
+.title {
+    padding: 10px 12px;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+
+    font-size: 13.5px;
+    line-height: 1.4;
+
+    color: var(--text);
+
+    word-break: break-word;
+}
+
+/* ================================================================
+   STATUS
+   ================================================================ */
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+
+    padding: 9px 12px;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+
+    font-size: 13px;
+
+    color: var(--text-secondary);
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.status-dot {
+    flex-shrink: 0;
+
+    width: 8px;
+    height: 8px;
+
+    border-radius: 50%;
+
+    background: var(--text-tertiary);
+
+    transition: background 0.2s ease;
+}
+
+.status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* estado: gravando */
+
+.status.is-recording {
+    background: var(--status-recording-bg);
+    border-color: var(--status-recording-border);
+
+    color: var(--status-recording-text);
+}
+
+.status.is-recording .status-dot {
+    background: var(--accent-red);
+
+    box-shadow: 0 0 0 0 rgba(215, 25, 32, 0.55);
+
+    animation: pulse-dot 1.6s ease-out infinite;
+}
+
+@keyframes pulse-dot {
+
+    0% {
+        box-shadow: 0 0 0 0 rgba(215, 25, 32, 0.55);
+    }
+
+    70% {
+        box-shadow: 0 0 0 7px rgba(215, 25, 32, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(215, 25, 32, 0);
+    }
+}
+
+/* estado: sucesso */
+
+.status.is-success {
+    background: var(--status-success-bg);
+    border-color: var(--status-success-border);
+
+    color: var(--status-success-text);
+}
+
+.status.is-success .status-dot {
+    background: var(--accent-green);
+}
+
+/* estado: erro */
+
+.status.is-error {
+    background: var(--status-recording-bg);
+    border-color: var(--status-recording-border);
+
+    color: var(--status-recording-text);
+}
+
+.status.is-error .status-dot {
+    background: var(--accent-red);
+}
+
+/* ================================================================
+   PASTA
+   ================================================================ */
+
+.folder {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 9px 10px 9px 12px;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+
+    font-size: 13px;
+
+    color: var(--text-secondary);
+
+    cursor: pointer;
+
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease;
+}
+
+.folder-icon {
+    flex-shrink: 0;
+
+    width: 15px;
+    height: 15px;
+
+    fill: var(--text-tertiary);
+
+    transition: fill 0.15s ease;
+}
+
+.folder-path {
+    flex: 1;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.folder-chevron {
+    flex-shrink: 0;
+
+    width: 15px;
+    height: 15px;
+
+    fill: none;
+    stroke: var(--text-tertiary);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+
+    opacity: 0;
+    transform: translateX(-2px);
+
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease,
+        stroke 0.15s ease;
+}
+
+.folder-selectable:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+}
+
+.folder-selectable:hover .folder-chevron {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.folder-selectable:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+/* ================================================================
+   BOTAO GRAVAR / PARAR
+   ================================================================ */
+
+.record-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+
+    width: 100%;
+
+    margin-top: 18px;
+    padding: 13px 16px;
+
+    border: none;
+    border-radius: var(--radius);
+
+    background: var(--accent-red);
+    color: #ffffff;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        transform 0.05s ease;
+}
+
+.record-button:hover {
+    background: var(--accent-red-hover);
+}
+
+.record-button:active {
+    transform: scale(0.98);
+}
+
+.record-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.record-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.record-icon {
+    flex-shrink: 0;
+
+    width: 13px;
+    height: 13px;
+
+    background: #ffffff;
+    border-radius: 50%;
+
+    transition:
+        border-radius 0.2s ease,
+        width 0.2s ease,
+        height 0.2s ease;
+}
+
+.record-button.recording {
+    background: var(--accent-red-active);
+}
+
+.record-button.recording:hover {
+    background: #a9141a;
+}
+
+.record-button.recording .record-icon {
+    width: 12px;
+    height: 12px;
+
+    border-radius: 3px;
+}
