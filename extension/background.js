@@ -647,6 +647,87 @@ function salvarAudioNative(
 
 
 // ================================================================
+// RESOLVER CURSO / MODULO / NUMERO DA AULA A PARTIR DO TITULO
+// ================================================================
+//
+// A extensao detecta o titulo direto da pagina (ex: "01 - Curso Vray 6 -
+// Apresentacao"). Sem selecao manual, curso/modulo/numero da aula precisam
+// ser derivados desse titulo e criados automaticamente no Supabase se ainda
+// nao existirem. Formato esperado: "<numero> - <curso> - <titulo da aula>".
+// Quando o titulo nao segue esse formato, cai num curso generico e o numero
+// da aula vira sequencial dentro do modulo.
+
+async function resolverCursoModulo(title, token) {
+
+    const tituloBruto = (title || "aula").trim();
+
+    const match = tituloBruto.match(
+        /^\s*(\d+)\s*-\s*(.+?)\s*-\s*(.+?)\s*$/
+    );
+
+    const courseName = match ? match[2] : "Aulas sem curso identificado";
+    const lessonTitle = match ? match[3] : tituloBruto;
+    let lessonNumber = match ? parseInt(match[1], 10) : null;
+
+    let course = (
+        await A3Supabase.restSelect(
+            "courses",
+            `select=id&name=eq.${encodeURIComponent(courseName)}`,
+            token
+        )
+    )[0];
+
+    if (!course) {
+        course = await A3Supabase.restInsert(
+            "courses",
+            { name: courseName },
+            token
+        );
+    }
+
+    let mod = (
+        await A3Supabase.restSelect(
+            "modules",
+            `select=id&course_id=eq.${course.id}&module_number=eq.1`,
+            token
+        )
+    )[0];
+
+    if (!mod) {
+        mod = await A3Supabase.restInsert(
+            "modules",
+            {
+                course_id: course.id,
+                module_number: 1,
+                name: "Módulo 1"
+            },
+            token
+        );
+    }
+
+    if (lessonNumber === null) {
+
+        const existentes = await A3Supabase.restSelect(
+            "lessons",
+            `select=lesson_number&module_id=eq.${mod.id}&order=lesson_number.desc&limit=1`,
+            token
+        );
+
+        lessonNumber = existentes[0]
+            ? existentes[0].lesson_number + 1
+            : 1;
+    }
+
+    return {
+        courseId: course.id,
+        moduleId: mod.id,
+        lessonNumber,
+        lessonTitle
+    };
+}
+
+
+// ================================================================
 // MENSAGENS
 // ================================================================
 
@@ -844,32 +925,23 @@ chrome.runtime.onMessage.addListener(
                             throw new Error("Sessão expirada. Faça login novamente.");
                         }
 
-                        const selection = await chrome.storage.local.get([
-                            "selectedCourseId",
-                            "selectedModuleId",
-                            "selectedLessonNumber"
-                        ]);
-
-                        if (
-                            !selection.selectedCourseId ||
-                            !selection.selectedModuleId ||
-                            !selection.selectedLessonNumber
-                        ) {
-                            throw new Error("Selecione curso, módulo e número da aula antes de gravar.");
-                        }
+                        const selection = await resolverCursoModulo(
+                            currentRecording.title,
+                            token
+                        );
 
                         const lessonRow = await A3Supabase.restInsert(
                             "lessons",
                             {
-                                module_id: selection.selectedModuleId,
-                                lesson_number: parseInt(selection.selectedLessonNumber, 10),
-                                title: currentRecording.title
+                                module_id: selection.moduleId,
+                                lesson_number: selection.lessonNumber,
+                                title: selection.lessonTitle
                             },
                             token
                         ).catch(async () => {
                             const existing = await A3Supabase.restSelect(
                                 "lessons",
-                                `select=id&module_id=eq.${selection.selectedModuleId}&lesson_number=eq.${parseInt(selection.selectedLessonNumber, 10)}`,
+                                `select=id&module_id=eq.${selection.moduleId}&lesson_number=eq.${selection.lessonNumber}`,
                                 token
                             );
                             return existing[0];
@@ -889,15 +961,15 @@ chrome.runtime.onMessage.addListener(
                         });
 
                         const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
-                        const storagePath = `${selection.selectedCourseId}/${selection.selectedModuleId}/${lessonRow.id}/${message.filename}`;
+                        const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${message.filename}`;
 
                         await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
 
                         const audioFileRow = await A3Supabase.restInsert(
                             "audio_files",
                             {
-                                course_id: selection.selectedCourseId,
-                                module_id: selection.selectedModuleId,
+                                course_id: selection.courseId,
+                                module_id: selection.moduleId,
                                 lesson_id: lessonRow.id,
                                 uploaded_by: user.id,
                                 storage_path: storagePath,
