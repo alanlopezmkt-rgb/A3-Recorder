@@ -239,17 +239,6 @@ async function iniciarGravacao(
         }
 
 
-        if (
-            !outputFolder ||
-            !outputFolder.trim()
-        ) {
-
-            throw new Error(
-                "Nenhuma pasta de destino configurada."
-            );
-        }
-
-
         await salvarEstado({
 
             currentRecording: {
@@ -452,7 +441,7 @@ function selecionarPastaNative() {
 
                 port =
                     chrome.runtime.connectNative(
-                        "com.a3os.folderpicker"
+                        "com.a3os.folderpicker.dev"
                     );
 
             } catch (error) {
@@ -568,7 +557,7 @@ function salvarAudioNative(
 
                 port =
                     chrome.runtime.connectNative(
-                        "com.a3os.folderpicker"
+                        "com.a3os.folderpicker.dev"
                     );
 
             } catch (error) {
@@ -815,15 +804,30 @@ chrome.runtime.onMessage.addListener(
 
                 try {
 
-                    const response =
-                        await salvarAudioNative(
+                    if (
+                        currentRecording.outputFolder &&
+                        currentRecording.outputFolder.trim()
+                    ) {
 
-                            currentRecording.outputFolder,
+                        try {
 
-                            message.filename,
+                            await salvarAudioNative(
 
-                            message.chunks
-                        );
+                                currentRecording.outputFolder,
+
+                                message.filename,
+
+                                message.chunks
+                            );
+
+                        } catch (nativeError) {
+
+                            console.error(
+                                "A3-OS: falha ao salvar cópia local (Native Host), seguindo só com o Supabase:",
+                                nativeError
+                            );
+                        }
+                    }
 
 
                     try {
@@ -947,7 +951,6 @@ chrome.runtime.onMessage.addListener(
                             "download-success",
 
                         filename:
-                            response.filename ||
                             message.filename
                     });
 

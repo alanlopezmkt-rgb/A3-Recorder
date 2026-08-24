@@ -1,9 +1,9 @@
 {
-    "name": "com.a3os.folderpicker",
-    "description": "A3-OS Recorder - Seletor de pasta do Windows",
-    "path": "C:\\Users\\alanl\\OneDrive\\Documents\\A3-OS-Recorder\\native-host\\a3os_folder_picker.bat",
+    "name": "com.a3os.folderpicker.dev",
+    "description": "A3-OS Recorder (dev/Supabase) - Seletor de pasta do Windows",
+    "path": "C:\\Users\\alanl\\Documents\\Trabalho\\A3-OS-Recorder\\.worktrees\\supabase-integration\\native-host\\a3os_folder_picker.bat",
     "type": "stdio",
     "allowed_origins": [
-        "chrome-extension://nnbejapkjnpmeakkobimhaebdgjcjfgd/"
+        "chrome-extension://hhpihlipnpnlokhdpnmjlchmdmcmmnck/"
     ]
 }

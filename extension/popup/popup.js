@@ -580,21 +580,6 @@ async function iniciarGravacao() {
                 ["outputFolder"]
             );
 
-        if (
-            !saved.outputFolder ||
-            !saved.outputFolder.trim()
-        ) {
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Selecione uma pasta antes de gravar.";
-            }
-
-            return;
-        }
-
-
         const title =
             titleElement?.textContent ||
             "aula";
