@@ -1,3 +1,5 @@
+importScripts("config.js", "lib/supabase.js", "lib/session.js");
+
 let recording = false;
 
 let currentRecording = {
@@ -881,6 +883,57 @@ chrome.runtime.onMessage.addListener(
 
 
             return false;
+        }
+
+
+        // ========================================================
+        // LOGIN
+        // ========================================================
+
+        if (message.action === "login") {
+
+            A3Session.login(message.email, message.password)
+                .then(user => {
+                    sendResponse({ success: true, user });
+                })
+                .catch(error => {
+                    sendResponse({ success: false, error: error.message });
+                });
+
+            return true;
+        }
+
+
+        // ========================================================
+        // LOGOUT
+        // ========================================================
+
+        if (message.action === "logout") {
+
+            A3Session.logout()
+                .then(() => {
+                    sendResponse({ success: true });
+                })
+                .catch(error => {
+                    sendResponse({ success: false, error: error.message });
+                });
+
+            return true;
+        }
+
+
+        // ========================================================
+        // SESSAO ATUAL
+        // ========================================================
+
+        if (message.action === "get-current-user") {
+
+            A3Session.getCurrentUser()
+                .then(user => {
+                    sendResponse({ user });
+                });
+
+            return true;
         }
     }
 );
