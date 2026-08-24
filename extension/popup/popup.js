@@ -25,7 +25,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const titleElement = document.getElementById("title");
     const statusElement = document.getElementById("status");
     const statusTextElement = document.getElementById("statusText");
-    const folderElement = document.getElementById("folder");
     const recordButton = document.getElementById("recordButton");
     const themeToggle = document.getElementById("themeToggle");
 
@@ -122,13 +121,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
-    // CARREGAR PASTA
-    // ============================================================
-
-    await carregarPasta();
-
-
-    // ============================================================
     // STATUS DA GRAVAÇÃO
     // ============================================================
 
@@ -194,51 +186,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
-    // SELECIONAR PASTA
-    // ============================================================
-
-    if (folderElement) {
-
-        folderElement.addEventListener(
-            "click",
-            selecionarPasta
-        );
-
-        folderElement.addEventListener(
-            "keydown",
-            (event) => {
-
-                if (
-                    event.key === "Enter" ||
-                    event.key === " "
-                ) {
-
-                    event.preventDefault();
-
-                    selecionarPasta();
-                }
-            }
-        );
-    }
-
-
-    // ============================================================
     // ESCUTAR ATUALIZAÇÕES
     // ============================================================
 
     chrome.runtime.onMessage.addListener(
         (message) => {
-
-            if (
-                message.action ===
-                "download-success"
-            ) {
-
-                mostrarSucessoDownload(
-                    message.filename
-                );
-            }
-
 
             if (
                 message.action ===
@@ -281,7 +233,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     }
 
                     if (message.stage === "done") {
-                        statusTextElement.textContent = "Áudio enviado. Aguardando transcrição.";
+                        mostrarSucessoSupabase();
                     }
 
                     if (message.stage === "error") {
@@ -434,130 +386,6 @@ async function carregarCursosEModulos() {
     lessonNumberInput.addEventListener("change", async () => {
         await chrome.storage.local.set({ selectedLessonNumber: lessonNumberInput.value });
     });
-}
-
-
-// ================================================================
-// CARREGAR PASTA
-// ================================================================
-
-async function carregarPasta() {
-
-    const folderPathElement =
-        document.getElementById("folderPath");
-
-    if (!folderPathElement) {
-        return;
-    }
-
-    try {
-
-        const saved =
-            await chrome.storage.local.get(
-                ["outputFolder"]
-            );
-
-        if (
-            saved.outputFolder &&
-            saved.outputFolder.trim()
-        ) {
-
-            folderPathElement.textContent =
-                saved.outputFolder;
-
-        } else {
-
-            folderPathElement.textContent =
-                "Clique para selecionar a pasta";
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao carregar pasta:",
-            error
-        );
-
-        folderPathElement.textContent =
-            "Clique para selecionar a pasta";
-    }
-}
-
-
-// ================================================================
-// SELECIONAR PASTA WINDOWS
-// ================================================================
-
-async function selecionarPasta() {
-
-    const folderPathElement =
-        document.getElementById("folderPath");
-
-    const statusTextElement =
-        document.getElementById("statusText");
-
-    if (folderPathElement) {
-
-        folderPathElement.textContent =
-            "Abrindo seletor de pasta...";
-    }
-
-    try {
-
-        const response =
-            await chrome.runtime.sendMessage({
-                action: "select-folder"
-            });
-
-        console.log(
-            "Resposta seleção:",
-            response
-        );
-
-        if (
-            response &&
-            response.success &&
-            response.folder
-        ) {
-
-            if (folderPathElement) {
-
-                folderPathElement.textContent =
-                    response.folder;
-            }
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Pasta configurada";
-            }
-
-        } else {
-
-            await carregarPasta();
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Aula detectada";
-            }
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao selecionar pasta:",
-            error
-        );
-
-        await carregarPasta();
-
-        if (statusTextElement) {
-
-            statusTextElement.textContent =
-                "Erro ao selecionar pasta";
-        }
-    }
 }
 
 
@@ -842,12 +670,10 @@ function atualizarInterfaceParado() {
 
 
 // ================================================================
-// SUCESSO
+// SUCESSO SUPABASE
 // ================================================================
 
-function mostrarSucessoDownload(
-    filename
-) {
+function mostrarSucessoSupabase() {
 
     const status =
         document.getElementById(
@@ -874,7 +700,7 @@ function mostrarSucessoDownload(
     if (statusText) {
 
         statusText.textContent =
-            "Áudio salvo com sucesso!";
+            "Aula enviada com sucesso para o Supabase!";
     }
 
     setTimeout(() => {
@@ -889,16 +715,10 @@ function mostrarSucessoDownload(
         if (statusText) {
 
             statusText.textContent =
-                "Aula detectada";
+                "Aguardando transcrição.";
         }
 
     }, 5000);
-
-
-    console.log(
-        "Áudio salvo:",
-        filename
-    );
 }
 
 
