@@ -15,7 +15,8 @@
     ],
 
     "host_permissions": [
-        "<all_urls>"
+        "<all_urls>",
+        "https://kvvcbkamxalcklnyodeu.supabase.co/*"
     ],
 
     "background": {
