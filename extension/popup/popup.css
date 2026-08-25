@@ -3,24 +3,32 @@
 }
 
 :root {
-    --bg: #111111;
-    --surface: #1b1b1b;
-    --surface-hover: #222222;
-    --border: #292929;
-    --border-hover: #3a3a3a;
+    --bg: #0a0b14;
+    --bg-glow:
+        radial-gradient(circle at 15% -10%, rgba(124, 58, 237, .30), transparent 55%),
+        radial-gradient(circle at 100% 10%, rgba(59, 130, 246, .22), transparent 50%),
+        radial-gradient(circle at 30% 110%, rgba(236, 72, 153, .16), transparent 55%);
+    --surface: rgba(255, 255, 255, 0.05);
+    --surface-hover: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.10);
+    --border-hover: rgba(255, 255, 255, 0.18);
 
     --text: #ffffff;
-    --text-secondary: #9a9a9a;
-    --text-tertiary: #6f6f6f;
+    --text-secondary: #a1a1ae;
+    --text-tertiary: #74748a;
 
-    --accent-blue: #2f7fd6;
+    --accent: #7c3aed;
+    --accent-2: #3b82f6;
+    --accent-pink: #ec4899;
+
+    --accent-blue: #3b82f6;
     --accent-cyan: #22c9dd;
     --accent-red: #d71920;
     --accent-red-hover: #ed1c24;
     --accent-red-active: #8f1116;
     --accent-green: #2fbf71;
 
-    --focus-ring: #3fd0e6;
+    --focus-ring: #7c3aed;
 
     --status-recording-bg: rgba(215, 25, 32, 0.1);
     --status-recording-border: rgba(215, 25, 32, 0.35);
@@ -30,11 +38,13 @@
     --status-success-border: rgba(47, 191, 113, 0.35);
     --status-success-text: #7be8ab;
 
+    --glass-blur: blur(18px);
     --radius: 13px;
 }
 
 :root[data-theme="light"] {
     --bg: #f4f4f6;
+    --bg-glow: none;
     --surface: #ffffff;
     --surface-hover: #eeeef1;
     --border: #e2e2e6;
@@ -46,7 +56,7 @@
 
     --accent-red-hover: #c8151c;
 
-    --focus-ring: #157a90;
+    --focus-ring: #7c3aed;
 
     --status-recording-bg: rgba(215, 25, 32, 0.08);
     --status-recording-border: rgba(215, 25, 32, 0.3);
@@ -55,6 +65,8 @@
     --status-success-bg: rgba(31, 158, 92, 0.1);
     --status-success-border: rgba(31, 158, 92, 0.32);
     --status-success-text: #1f8f56;
+
+    --glass-blur: none;
 }
 
 html {
@@ -70,7 +82,8 @@ body {
 
     width: 340px;
 
-    background: var(--bg);
+    background: var(--bg-glow), var(--bg);
+    background-attachment: fixed;
     color: var(--text);
 
     font-family:
@@ -89,6 +102,85 @@ body {
 
 .container {
     padding: 18px;
+}
+
+/* ================================================================
+   BARRA DO USUARIO
+   ================================================================ */
+
+.user-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    margin-bottom: 14px;
+}
+
+#userGreeting {
+    font-size: 12.5px;
+    font-weight: 600;
+
+    color: var(--text-secondary);
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-bar-right {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.logout-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    width: 28px;
+    height: 28px;
+
+    padding: 0;
+    margin: 0;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+
+    color: var(--text-secondary);
+
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.logout-button:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+    color: var(--accent-red);
+}
+
+.logout-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.logout-icon {
+    width: 15px;
+    height: 15px;
+
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 /* ================================================================
@@ -171,7 +263,7 @@ body {
 .theme-toggle:hover {
     background: var(--surface-hover);
     border-color: var(--border-hover);
-    color: var(--text);
+    color: var(--accent-2);
 }
 
 .theme-toggle:focus-visible {
@@ -232,6 +324,8 @@ body {
     padding: 10px 12px;
 
     background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
 
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -256,6 +350,8 @@ body {
     padding: 9px 12px;
 
     background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
 
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -347,6 +443,161 @@ body {
 }
 
 /* ================================================================
+   STATUS DO BANCO DE DADOS
+   ================================================================ */
+
+.db-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 8px 12px;
+
+    background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+
+    font-size: 12px;
+    font-weight: 600;
+
+    color: var(--text-secondary);
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        color 0.2s ease;
+}
+
+.db-status-dot {
+    flex-shrink: 0;
+
+    width: 7px;
+    height: 7px;
+
+    border-radius: 50%;
+
+    background: var(--text-tertiary);
+}
+
+.db-status.db-status-ok {
+    background: var(--status-success-bg);
+    border-color: var(--status-success-border);
+
+    color: var(--status-success-text);
+}
+
+.db-status.db-status-ok .db-status-dot {
+    background: var(--accent-green);
+
+    animation: pulse-dot-green 1.8s ease-out infinite;
+}
+
+@keyframes pulse-dot-green {
+
+    0% {
+        box-shadow: 0 0 0 0 rgba(47, 191, 113, 0.55);
+    }
+
+    70% {
+        box-shadow: 0 0 0 6px rgba(47, 191, 113, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(47, 191, 113, 0);
+    }
+}
+
+.db-status.db-status-off {
+    background: var(--status-recording-bg);
+    border-color: var(--status-recording-border);
+
+    color: var(--status-recording-text);
+}
+
+.db-status.db-status-off .db-status-dot {
+    background: var(--accent-red);
+}
+
+.db-status-compact {
+    padding: 4px 9px;
+    gap: 6px;
+
+    font-size: 11px;
+}
+
+/* ================================================================
+   PROGRESSO GERAL DO CURSO
+   ================================================================ */
+
+.progress-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    padding: 10px 12px;
+
+    background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.progress-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.progress-summary-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+
+    font-size: 11.5px;
+    font-weight: 600;
+
+    color: var(--text-secondary);
+}
+
+.progress-summary-top span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.progress-summary-top span:last-child {
+    flex-shrink: 0;
+
+    color: var(--text);
+    font-weight: 700;
+}
+
+.progress-summary-track {
+    width: 100%;
+    height: 6px;
+
+    border-radius: 999px;
+    background: var(--border);
+
+    overflow: hidden;
+}
+
+.progress-summary-fill {
+    height: 100%;
+    border-radius: 999px;
+
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+
+    transition: width 0.4s ease;
+}
+
+/* ================================================================
    PASTA
    ================================================================ */
 
@@ -358,6 +609,8 @@ body {
     padding: 9px 10px 9px 12px;
 
     background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
 
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -446,7 +699,8 @@ body {
     border: none;
     border-radius: var(--radius);
 
-    background: var(--accent-red);
+    background: linear-gradient(115deg, var(--accent) 0%, var(--accent-2) 100%);
+    box-shadow: 0 10px 24px -12px rgba(124, 58, 237, .55);
     color: #ffffff;
 
     font-size: 14px;
@@ -456,11 +710,12 @@ body {
 
     transition:
         background 0.15s ease,
+        box-shadow 0.15s ease,
         transform 0.05s ease;
 }
 
 .record-button:hover {
-    background: var(--accent-red-hover);
+    background: linear-gradient(115deg, #8b4bf0 0%, #4f8ff9 100%);
 }
 
 .record-button:active {
@@ -493,11 +748,12 @@ body {
 }
 
 .record-button.recording {
-    background: var(--accent-red-active);
+    background: var(--accent-red);
+    box-shadow: 0 10px 24px -12px rgba(215, 25, 32, .55);
 }
 
 .record-button.recording:hover {
-    background: #a9141a;
+    background: var(--accent-red-hover);
 }
 
 .record-button.recording .record-icon {
@@ -533,7 +789,7 @@ body {
 }
 
 .history-toggle:hover {
-    color: var(--text);
+    color: var(--accent-2);
 }
 
 .history-toggle-chevron {
@@ -572,6 +828,8 @@ body {
     padding: 10px 12px;
 
     background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
 
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -586,6 +844,8 @@ body {
     padding: 8px 12px;
 
     background: var(--surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
 
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -654,8 +914,8 @@ body {
 
 .history-item-status.status-uploaded,
 .history-item-status.status-processing {
-    background: rgba(47, 127, 214, 0.12);
-    color: var(--accent-blue);
+    background: rgba(124, 58, 237, 0.14);
+    color: var(--accent);
 }
 
 .history-item-status.status-failed {

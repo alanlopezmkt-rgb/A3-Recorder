@@ -11,7 +11,8 @@
         "scripting",
         "tabCapture",
         "offscreen",
-        "nativeMessaging"
+        "nativeMessaging",
+        "alarms"
     ],
 
     "host_permissions": [

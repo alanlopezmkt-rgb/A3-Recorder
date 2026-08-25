@@ -2,6 +2,58 @@ importScripts("config.js", "lib/supabase.js", "lib/session.js");
 
 let recording = false;
 
+
+// ================================================================
+// HEARTBEAT DE PRESENCA (last_seen do usuário logado)
+// ================================================================
+//
+// Enquanto o usuário estiver logado, a extensão atualiza
+// profiles.last_seen periodicamente para que a dashboard possa
+// mostrar se ele está "online" (usando a extensão agora) ou
+// "offline" — mesmo padrão do heartbeat do worker de transcrição.
+// ================================================================
+
+const HEARTBEAT_ALARM = "a3os-heartbeat";
+const HEARTBEAT_INTERVAL_MINUTES = 0.5; // 30s
+
+async function enviarHeartbeat() {
+
+    try {
+
+        const user = await A3Session.getCurrentUser();
+
+        if (!user) {
+            return;
+        }
+
+        const token = await A3Session.getValidAccessToken();
+
+        await A3Supabase.restUpdate(
+            "profiles",
+            `id=eq.${user.id}`,
+            { last_seen: new Date().toISOString() },
+            token
+        );
+
+    } catch (error) {
+
+        console.warn("Erro ao enviar heartbeat:", error);
+    }
+}
+
+chrome.alarms.create(HEARTBEAT_ALARM, {
+    periodInMinutes: HEARTBEAT_INTERVAL_MINUTES
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+
+    if (alarm.name === HEARTBEAT_ALARM) {
+        enviarHeartbeat();
+    }
+});
+
+enviarHeartbeat();
+
 let currentRecording = {
     title: "aula",
     outputFolder: ""
@@ -1118,10 +1170,39 @@ chrome.runtime.onMessage.addListener(
 
         if (message.action === "get-current-user") {
 
-            A3Session.getCurrentUser()
-                .then(user => {
-                    sendResponse({ user });
-                });
+            (async () => {
+
+                const user = await A3Session.getCurrentUser();
+
+                if (!user) {
+                    sendResponse({ user: null });
+                    return;
+                }
+
+                let displayName = null;
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    const profiles = await A3Supabase.restSelect(
+                        "profiles",
+                        `select=display_name&id=eq.${user.id}`,
+                        token
+                    );
+
+                    displayName = profiles?.[0]?.display_name || null;
+
+                } catch (error) {
+
+                    console.warn("Erro ao buscar nome do usuário:", error);
+                }
+
+                sendResponse({ user: { ...user, displayName } });
+
+                enviarHeartbeat();
+
+            })();
 
             return true;
         }
@@ -1228,6 +1309,127 @@ chrome.runtime.onMessage.addListener(
                 } catch (error) {
 
                     sendResponse({ modules: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // PROGRESSO GERAL DO CURSO (todas as aulas de todos os
+        // modulos, em %)
+        // ========================================================
+
+        if (message.action === "get-overall-progress") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ error: "not-authenticated" });
+                        return;
+                    }
+
+                    const courses = await A3Supabase.restSelect(
+                        "courses",
+                        "select=total_lessons,modules(lessons(status))",
+                        token
+                    );
+
+                    let totalLessons = 0;
+                    let completedLessons = 0;
+
+                    (courses || []).forEach((curso) => {
+
+                        totalLessons += curso.total_lessons || 0;
+
+                        (curso.modules || []).forEach((modulo) => {
+
+                            const aulas = modulo.lessons || [];
+                            completedLessons += aulas.filter((l) => l.status === "completed").length;
+                        });
+                    });
+
+                    const percent = totalLessons > 0
+                        ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
+                        : 0;
+
+                    sendResponse({
+                        progress: { totalLessons, completedLessons, percent }
+                    });
+
+                } catch (error) {
+
+                    sendResponse({ error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // PROGRESSO DO MODULO ATUAL (aulas concluidas no modulo
+        // detectado na pagina, em %)
+        // ========================================================
+
+        if (message.action === "get-module-progress") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ error: "not-authenticated" });
+                        return;
+                    }
+
+                    const nomeModulo = (message.moduleName || "").trim();
+
+                    if (!nomeModulo) {
+                        sendResponse({ progress: { found: false } });
+                        return;
+                    }
+
+                    const modules = await A3Supabase.restSelect(
+                        "modules",
+                        `select=name,total_lessons,lessons(status)&name=eq.${encodeURIComponent(nomeModulo)}`,
+                        token
+                    );
+
+                    const modulo = modules?.[0];
+
+                    if (!modulo) {
+                        sendResponse({ progress: { found: false, moduleName: nomeModulo } });
+                        return;
+                    }
+
+                    const aulas = modulo.lessons || [];
+                    const completed = aulas.filter((l) => l.status === "completed").length;
+                    const total = modulo.total_lessons || 0;
+                    const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+
+                    sendResponse({
+                        progress: {
+                            found: true,
+                            moduleName: modulo.name,
+                            completed,
+                            total,
+                            percent
+                        }
+                    });
+
+                } catch (error) {
+
+                    sendResponse({ error: error.message });
                 }
 
             })();

@@ -114,6 +114,25 @@ const A3Supabase = (() => {
         return Array.isArray(data) ? data[0] : data;
     }
 
+    async function restUpdate(table, query, patch, accessToken) {
+        const response = await fetch(
+            `${A3OS_CONFIG.SUPABASE_URL}/rest/v1/${table}?${query}`,
+            {
+                method: "PATCH",
+                headers: {
+                    ...baseHeaders(accessToken),
+                    "Prefer": "return=minimal"
+                },
+                body: JSON.stringify(patch)
+            }
+        );
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.message || `Falha ao atualizar ${table}.`);
+        }
+    }
+
     async function rpc(name, args, accessToken) {
         const response = await fetch(
             `${A3OS_CONFIG.SUPABASE_URL}/rest/v1/rpc/${name}`,
@@ -170,6 +189,7 @@ const A3Supabase = (() => {
         refreshSession,
         restSelect,
         restInsert,
+        restUpdate,
         rpc,
         uploadToStorage
     };

@@ -1,28 +1,50 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
+
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>A3-OS — Login</title>
+
     <link rel="stylesheet" href="login.css">
 </head>
+
 <body>
+
     <div class="login-box">
-        <h1>A3-OS</h1>
-        <p class="subtitle">Entre para gravar e enviar aulas</p>
+
+        <div class="login-header">
+            <img class="brand-icon" src="../icons/icon-normal-48.png" width="46" height="46" alt="">
+            <div class="brand-text">
+                <h1>A3-OS</h1>
+                <p class="subtitle">Entre para gravar e enviar aulas</p>
+            </div>
+        </div>
 
         <form id="loginForm">
+
             <label for="email">E-mail</label>
             <input type="email" id="email" required autocomplete="username">
 
             <label for="password">Senha</label>
             <input type="password" id="password" required autocomplete="current-password">
 
+            <label class="remember-row" for="rememberMe">
+                <input type="checkbox" id="rememberMe">
+                <span>Lembre-se de mim</span>
+            </label>
+
             <button type="submit" id="loginButton">Entrar</button>
 
             <p id="loginError" class="error" hidden></p>
+
         </form>
+
     </div>
 
     <script src="login.js"></script>
+
 </body>
+
 </html>

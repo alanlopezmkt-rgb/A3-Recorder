@@ -1,5 +1,20 @@
 let recording = false;
 
+function saudacaoDoDia() {
+
+    const hora = new Date().getHours();
+
+    if (hora < 12) {
+        return "Bom dia";
+    }
+
+    if (hora < 18) {
+        return "Boa tarde";
+    }
+
+    return "Boa noite";
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
 
     const userCheck = await chrome.runtime.sendMessage({ action: "get-current-user" });
@@ -9,9 +24,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
-    const userEmailElement = document.getElementById("userEmail");
-    if (userEmailElement) {
-        userEmailElement.textContent = userCheck.user.email;
+    const userGreetingElement = document.getElementById("userGreeting");
+    if (userGreetingElement) {
+        const nome = userCheck.user.displayName || userCheck.user.email;
+        userGreetingElement.textContent = `${saudacaoDoDia()}, ${nome}`;
     }
 
     const logoutButton = document.getElementById("logoutButton");
@@ -47,6 +63,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // DETECTAR TÍTULO DA AULA
     // ============================================================
 
+    let moduloDetectado = null;
+
     try {
 
         const tabs = await chrome.tabs.query({
@@ -74,20 +92,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                         const h1 = document.querySelector("h1");
 
-                        if (
-                            h1 &&
-                            h1.innerText &&
-                            h1.innerText.trim()
-                        ) {
-                            return h1.innerText.trim();
-                        }
+                        const title =
+                            h1 && h1.innerText && h1.innerText.trim()
+                                ? h1.innerText.trim()
+                                : (document.title || "Aula sem título");
 
-                        return document.title || "Aula sem título";
+                        // A pagina tem varios elementos com ".text-foreground" (ex: botao
+                        // "Voltar" no topo). O nome do modulo e' o texto imediatamente
+                        // acima do h1 da aula, entao pegamos o ultimo candidato que
+                        // aparece ANTES do h1 no DOM, ignorando textos de navegacao
+                        // genericos como "Voltar".
+                        const IGNORAR = ["voltar", "avançar", "avancar", "próxima", "proxima", "anterior"];
+
+                        const candidatos = Array.from(
+                            document.querySelectorAll(".text-foreground")
+                        ).filter((el) => {
+                            const texto = (el.innerText || "").trim();
+                            if (!texto || IGNORAR.includes(texto.toLowerCase())) {
+                                return false;
+                            }
+                            if (h1 && (el === h1 || el.contains(h1) || h1.contains(el))) {
+                                return false;
+                            }
+                            if (h1) {
+                                const posicao = h1.compareDocumentPosition(el);
+                                return !!(posicao & Node.DOCUMENT_POSITION_PRECEDING);
+                            }
+                            return true;
+                        });
+
+                        const moduloElement = candidatos[candidatos.length - 1] || null;
+
+                        const moduleName =
+                            moduloElement && moduloElement.innerText && moduloElement.innerText.trim()
+                                ? moduloElement.innerText.trim()
+                                : null;
+
+                        return { title, moduleName };
                     }
                 });
 
-                titleElement.textContent =
-                    result?.[0]?.result || "Aula sem título";
+                const deteccao = result?.[0]?.result;
+
+                titleElement.textContent = deteccao?.title || "Aula sem título";
+                moduloDetectado = deteccao?.moduleName || null;
+
+                const moduleTitleElement = document.getElementById("moduleTitle");
+                if (moduleTitleElement) {
+                    moduleTitleElement.textContent = moduloDetectado || "Módulo não detectado";
+                }
 
             } catch (error) {
 
@@ -198,6 +251,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await carregarHistorico();
+    await carregarProgressoGeral();
+    await carregarProgresso(moduloDetectado);
 
 
     // ============================================================
@@ -244,12 +299,18 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (statusTextElement) {
 
                     if (message.stage === "uploading") {
-                        statusTextElement.textContent = "Enviando áudio para o Supabase...";
+                        const statusElement = document.getElementById("status");
+                        if (statusElement) {
+                            statusElement.hidden = false;
+                        }
+                        statusTextElement.textContent = "Enviando áudio...";
                     }
 
                     if (message.stage === "done") {
                         mostrarSucessoSupabase();
                         carregarHistorico();
+                        carregarProgressoGeral();
+                        carregarProgresso(moduloDetectado);
                     }
 
                     if (message.stage === "error") {
@@ -451,6 +512,12 @@ async function pararGravacao() {
         atualizarInterfaceParado();
 
 
+        const statusElement = document.getElementById("status");
+
+        if (statusElement) {
+            statusElement.hidden = false;
+        }
+
         if (statusTextElement) {
 
             statusTextElement.textContent =
@@ -514,6 +581,8 @@ function atualizarInterfaceGravando() {
 
 
     if (status) {
+
+        status.hidden = false;
 
         status.classList.remove(
             "is-success",
@@ -588,6 +657,8 @@ function atualizarInterfaceParado() {
 
     if (status) {
 
+        status.hidden = true;
+
         status.classList.remove(
             "is-recording",
             "is-error"
@@ -627,6 +698,8 @@ function mostrarSucessoSupabase() {
 
     if (status) {
 
+        status.hidden = false;
+
         status.classList.remove(
             "is-recording",
             "is-error"
@@ -640,12 +713,14 @@ function mostrarSucessoSupabase() {
     if (statusText) {
 
         statusText.textContent =
-            "Aula enviada com sucesso para o Supabase!";
+            "Aula enviada com sucesso!";
     }
 
     setTimeout(() => {
 
         if (status) {
+
+            status.hidden = true;
 
             status.classList.remove(
                 "is-success"
@@ -659,6 +734,30 @@ function mostrarSucessoSupabase() {
         }
 
     }, 5000);
+}
+
+
+// ================================================================
+// CONEXÃO COM O BANCO DE DADOS
+// ================================================================
+
+function atualizarStatusBanco(conectado) {
+
+    const dbStatus = document.getElementById("dbStatus");
+    const dbStatusText = document.getElementById("dbStatusText");
+
+    if (!dbStatus) {
+        return;
+    }
+
+    dbStatus.classList.toggle("db-status-ok", conectado);
+    dbStatus.classList.toggle("db-status-off", !conectado);
+
+    if (dbStatusText) {
+        dbStatusText.textContent = conectado
+            ? "Conectado"
+            : "Sem conexão";
+    }
 }
 
 
@@ -687,6 +786,8 @@ async function carregarHistorico() {
             await chrome.runtime.sendMessage({
                 action: "get-upload-history"
             });
+
+        atualizarStatusBanco(!response?.error);
 
         const history = response?.history || [];
 
@@ -774,6 +875,93 @@ function escapeHtml(texto) {
 
 
 // ================================================================
+// PROGRESSO GERAL DO CURSO
+// ================================================================
+
+async function carregarProgressoGeral() {
+
+    const valueElement = document.getElementById("overallProgressValue");
+    const fillElement = document.getElementById("overallProgressFill");
+
+    if (!valueElement) {
+        return;
+    }
+
+    try {
+
+        const response = await chrome.runtime.sendMessage({ action: "get-overall-progress" });
+
+        const progress = response?.progress;
+
+        if (!progress) {
+            return;
+        }
+
+        valueElement.textContent = `${progress.percent}%`;
+
+        if (fillElement) {
+            fillElement.style.width = `${progress.percent}%`;
+        }
+
+    } catch (error) {
+
+        console.warn("Erro ao carregar progresso geral do curso:", error);
+    }
+}
+
+
+// ================================================================
+// PROGRESSO DO MODULO ATUAL
+// ================================================================
+
+async function carregarProgresso(moduleName) {
+
+    const labelElement = document.getElementById("moduleProgressLabel");
+    const valueElement = document.getElementById("moduleProgressValue");
+    const fillElement = document.getElementById("moduleProgressFill");
+
+    if (!labelElement || !valueElement) {
+        return;
+    }
+
+    if (!moduleName) {
+        labelElement.textContent = "Módulo atual";
+        valueElement.textContent = "não identificado";
+        if (fillElement) fillElement.style.width = "0%";
+        return;
+    }
+
+    try {
+
+        const response = await chrome.runtime.sendMessage({
+            action: "get-module-progress",
+            moduleName
+        });
+
+        const progress = response?.progress;
+
+        if (!progress || !progress.found) {
+            labelElement.textContent = moduleName;
+            valueElement.textContent = "não cadastrado";
+            if (fillElement) fillElement.style.width = "0%";
+            return;
+        }
+
+        labelElement.textContent = progress.moduleName;
+        valueElement.textContent = `${progress.percent}%`;
+
+        if (fillElement) {
+            fillElement.style.width = `${progress.percent}%`;
+        }
+
+    } catch (error) {
+
+        console.warn("Erro ao carregar progresso do módulo:", error);
+    }
+}
+
+
+// ================================================================
 // ERRO
 // ================================================================
 
@@ -792,6 +980,8 @@ function mostrarErro(
         );
 
     if (status) {
+
+        status.hidden = false;
 
         status.classList.remove(
             "is-recording",
