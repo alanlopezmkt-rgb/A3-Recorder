@@ -221,7 +221,8 @@ async function consultarOffscreenGravando() {
 
 async function iniciarGravacao(
     title,
-    outputFolder
+    outputFolder,
+    moduleName
 ) {
 
     try {
@@ -300,7 +301,11 @@ async function iniciarGravacao(
                     "aula",
 
                 outputFolder:
-                    outputFolder
+                    outputFolder,
+
+                moduleName:
+                    moduleName ||
+                    null
             }
         });
 
@@ -709,7 +714,7 @@ function salvarAudioNative(
 // Quando o titulo nao segue esse formato, cai num curso generico e o numero
 // da aula vira sequencial dentro do modulo.
 
-async function resolverCursoModulo(title, token) {
+async function resolverCursoModulo(title, token, moduleName) {
 
     const tituloBruto = (title || "aula").trim();
 
@@ -737,21 +742,83 @@ async function resolverCursoModulo(title, token) {
         );
     }
 
-    let mod = (
-        await A3Supabase.restSelect(
-            "modules",
-            `select=id&course_id=eq.${course.id}&module_number=eq.1`,
-            token
-        )
-    )[0];
+    // ============================================================
+    // MODULO
+    // ============================================================
+    // Nunca assumimos "módulo 1" às cegas: cursos podem já ter uma
+    // grade real pré-cadastrada (ex.: módulo 1 sendo "SKETCHUP
+    // 2024/2025"), e jogar toda aula sem número de módulo detectado
+    // ali dentro polui o progresso desse módulo. Em vez disso:
+    // 1) se detectamos o nome do módulo na página, procuramos um
+    //    módulo já existente com esse nome nesse curso;
+    // 2) se não encontrarmos (curso novo ou nome não bateu), caímos
+    //    num módulo "coringa" isolado, que nunca colide com módulos
+    //    reais da grade.
+    // ============================================================
 
-    if (!mod) {
+    const moduleNameLimpo = (moduleName || "").trim();
+
+    let mod = null;
+
+    if (moduleNameLimpo) {
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id&course_id=eq.${course.id}&name=eq.${encodeURIComponent(moduleNameLimpo)}`,
+                token
+            )
+        )[0];
+    }
+
+    if (!mod && moduleNameLimpo) {
+        const existentesCurso = await A3Supabase.restSelect(
+            "modules",
+            `select=module_number&course_id=eq.${course.id}&order=module_number.desc&limit=1`,
+            token
+        );
+
+        const proximoNumero = existentesCurso[0]
+            ? existentesCurso[0].module_number + 1
+            : 1;
+
         mod = await A3Supabase.restInsert(
             "modules",
             {
                 course_id: course.id,
-                module_number: 1,
-                name: "Módulo 1"
+                module_number: proximoNumero,
+                name: moduleNameLimpo
+            },
+            token
+        );
+    }
+
+    if (!mod) {
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id&course_id=eq.${course.id}&name=eq.Aulas sem módulo identificado`,
+                token
+            )
+        )[0];
+    }
+
+    if (!mod) {
+        const existentesCurso = await A3Supabase.restSelect(
+            "modules",
+            `select=module_number&course_id=eq.${course.id}&order=module_number.desc&limit=1`,
+            token
+        );
+
+        const proximoNumero = existentesCurso[0]
+            ? existentesCurso[0].module_number + 1
+            : 1;
+
+        mod = await A3Supabase.restInsert(
+            "modules",
+            {
+                course_id: course.id,
+                module_number: proximoNumero,
+                name: "Aulas sem módulo identificado"
             },
             token
         );
@@ -878,7 +945,9 @@ chrome.runtime.onMessage.addListener(
 
                 message.title,
 
-                message.outputFolder
+                message.outputFolder,
+
+                message.moduleName
 
             ).then(
                 response => {
@@ -979,7 +1048,8 @@ chrome.runtime.onMessage.addListener(
 
                         const selection = await resolverCursoModulo(
                             currentRecording.title,
-                            token
+                            token,
+                            currentRecording.moduleName
                         );
 
                         const lessonRow = await A3Supabase.restInsert(

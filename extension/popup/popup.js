@@ -1,4 +1,5 @@
 let recording = false;
+let moduloDetectado = null;
 
 function saudacaoDoDia() {
 
@@ -62,8 +63,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     // ============================================================
     // DETECTAR TÍTULO DA AULA
     // ============================================================
-
-    let moduloDetectado = null;
 
     try {
 
@@ -420,6 +419,8 @@ async function iniciarGravacao() {
                 action: "start-recording",
 
                 title: title,
+
+                moduleName: moduloDetectado,
 
                 outputFolder:
                     saved.outputFolder
