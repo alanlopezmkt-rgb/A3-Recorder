@@ -1334,7 +1334,7 @@ chrome.runtime.onMessage.addListener(
 
                     const history = await A3Supabase.restSelect(
                         "audio_files",
-                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name)&uploaded_by=eq.${user.id}&order=created_at.desc&limit=20`,
+                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}&order=created_at.desc&limit=20`,
                         token
                     );
 

@@ -767,11 +767,31 @@ function atualizarStatusBanco(conectado) {
 // ================================================================
 
 const HISTORY_STATUS_LABEL = {
-    uploaded: "Enviado",
+    uploaded: "Pendente de transcrição",
     processing: "Transcrevendo",
-    completed: "Concluído",
+    synced: "Na base de conhecimento",
+    unsynced: "Transcrito, mas não sincronizado",
     failed: "Falhou"
 };
+
+function statusEfetivo(item) {
+
+    if (item.status === "uploaded" || item.status === "processing" || item.status === "failed") {
+        return item.status;
+    }
+
+    if (item.status !== "completed") {
+        return item.status;
+    }
+
+    const syncRows = item.knowledge_sync_status || [];
+
+    const ultimoSync = syncRows
+        .slice()
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+    return ultimoSync?.status === "synced" ? "synced" : "unsynced";
+}
 
 async function carregarHistorico() {
 
@@ -831,8 +851,10 @@ function renderHistoryItem(item) {
 
     const dataFormatada = formatarDataHora(item.created_at);
 
+    const statusChave = statusEfetivo(item);
+
     const statusLabel =
-        HISTORY_STATUS_LABEL[item.status] || item.status;
+        HISTORY_STATUS_LABEL[statusChave] || statusChave;
 
     return `
         <div class="history-item">
@@ -840,7 +862,7 @@ function renderHistoryItem(item) {
             ${meta ? `<div class="history-item-meta">${escapeHtml(meta)}</div>` : ""}
             <div class="history-item-date">
                 <span>${dataFormatada}</span>
-                <span class="history-item-status status-${item.status}">${escapeHtml(statusLabel)}</span>
+                <span class="history-item-status status-${statusChave}">${escapeHtml(statusLabel)}</span>
             </div>
         </div>
     `;
