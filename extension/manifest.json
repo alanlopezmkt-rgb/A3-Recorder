@@ -11,11 +11,13 @@
         "scripting",
         "tabCapture",
         "offscreen",
-        "nativeMessaging"
+        "nativeMessaging",
+        "alarms"
     ],
 
     "host_permissions": [
-        "<all_urls>"
+        "<all_urls>",
+        "https://kvvcbkamxalcklnyodeu.supabase.co/*"
     ],
 
     "background": {

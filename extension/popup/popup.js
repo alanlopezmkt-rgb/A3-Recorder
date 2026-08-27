@@ -1,11 +1,47 @@
 let recording = false;
+let moduloDetectado = null;
+
+function saudacaoDoDia() {
+
+    const hora = new Date().getHours();
+
+    if (hora < 12) {
+        return "Bom dia";
+    }
+
+    if (hora < 18) {
+        return "Boa tarde";
+    }
+
+    return "Boa noite";
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
+
+    const userCheck = await chrome.runtime.sendMessage({ action: "get-current-user" });
+
+    if (!userCheck || !userCheck.user) {
+        window.location.href = "../login/login.html";
+        return;
+    }
+
+    const userGreetingElement = document.getElementById("userGreeting");
+    if (userGreetingElement) {
+        const nome = userCheck.user.displayName || userCheck.user.email;
+        userGreetingElement.textContent = `${saudacaoDoDia()}, ${nome}`;
+    }
+
+    const logoutButton = document.getElementById("logoutButton");
+    if (logoutButton) {
+        logoutButton.addEventListener("click", async () => {
+            await chrome.runtime.sendMessage({ action: "logout" });
+            window.location.href = "../login/login.html";
+        });
+    }
 
     const titleElement = document.getElementById("title");
     const statusElement = document.getElementById("status");
     const statusTextElement = document.getElementById("statusText");
-    const folderElement = document.getElementById("folder");
     const recordButton = document.getElementById("recordButton");
     const themeToggle = document.getElementById("themeToggle");
 
@@ -55,20 +91,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                         const h1 = document.querySelector("h1");
 
-                        if (
-                            h1 &&
-                            h1.innerText &&
-                            h1.innerText.trim()
-                        ) {
-                            return h1.innerText.trim();
-                        }
+                        const title =
+                            h1 && h1.innerText && h1.innerText.trim()
+                                ? h1.innerText.trim()
+                                : (document.title || "Aula sem título");
 
-                        return document.title || "Aula sem título";
+                        // A pagina tem varios elementos com ".text-foreground" (ex: botao
+                        // "Voltar" no topo). O nome do modulo e' o texto imediatamente
+                        // acima do h1 da aula, entao pegamos o ultimo candidato que
+                        // aparece ANTES do h1 no DOM, ignorando textos de navegacao
+                        // genericos como "Voltar".
+                        const IGNORAR = ["voltar", "avançar", "avancar", "próxima", "proxima", "anterior"];
+
+                        const candidatos = Array.from(
+                            document.querySelectorAll(".text-foreground")
+                        ).filter((el) => {
+                            const texto = (el.innerText || "").trim();
+                            if (!texto || IGNORAR.includes(texto.toLowerCase())) {
+                                return false;
+                            }
+                            if (h1 && (el === h1 || el.contains(h1) || h1.contains(el))) {
+                                return false;
+                            }
+                            if (h1) {
+                                const posicao = h1.compareDocumentPosition(el);
+                                return !!(posicao & Node.DOCUMENT_POSITION_PRECEDING);
+                            }
+                            return true;
+                        });
+
+                        const moduloElement = candidatos[candidatos.length - 1] || null;
+
+                        const moduleName =
+                            moduloElement && moduloElement.innerText && moduloElement.innerText.trim()
+                                ? moduloElement.innerText.trim()
+                                : null;
+
+                        return { title, moduleName };
                     }
                 });
 
-                titleElement.textContent =
-                    result?.[0]?.result || "Aula sem título";
+                const deteccao = result?.[0]?.result;
+
+                titleElement.textContent = deteccao?.title || "Aula sem título";
+                moduloDetectado = deteccao?.moduleName || null;
+
+                const moduleTitleElement = document.getElementById("moduleTitle");
+                if (moduleTitleElement) {
+                    moduleTitleElement.textContent = moduloDetectado || "Módulo não detectado";
+                }
 
             } catch (error) {
 
@@ -92,13 +163,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         titleElement.textContent =
             "Aula sem título";
     }
-
-
-    // ============================================================
-    // CARREGAR PASTA
-    // ============================================================
-
-    await carregarPasta();
 
 
     // ============================================================
@@ -167,32 +231,27 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
-    // SELECIONAR PASTA
+    // HISTÓRICO DE ENVIOS
     // ============================================================
 
-    if (folderElement) {
+    const historyToggle = document.getElementById("historyToggle");
+    const historyList = document.getElementById("historyList");
 
-        folderElement.addEventListener(
-            "click",
-            selecionarPasta
-        );
+    if (historyToggle && historyList) {
 
-        folderElement.addEventListener(
-            "keydown",
-            (event) => {
+        historyToggle.addEventListener("click", () => {
 
-                if (
-                    event.key === "Enter" ||
-                    event.key === " "
-                ) {
+            const expandido =
+                historyToggle.getAttribute("aria-expanded") === "true";
 
-                    event.preventDefault();
-
-                    selecionarPasta();
-                }
-            }
-        );
+            historyToggle.setAttribute("aria-expanded", String(!expandido));
+            historyList.classList.toggle("is-collapsed", expandido);
+        });
     }
+
+    await carregarHistorico();
+    await carregarProgressoGeral();
+    await carregarProgresso(moduloDetectado);
 
 
     // ============================================================
@@ -201,17 +260,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     chrome.runtime.onMessage.addListener(
         (message) => {
-
-            if (
-                message.action ===
-                "download-success"
-            ) {
-
-                mostrarSucessoDownload(
-                    message.filename
-                );
-            }
-
 
             if (
                 message.action ===
@@ -239,6 +287,34 @@ document.addEventListener("DOMContentLoaded", async () => {
                 } else {
 
                     atualizarInterfaceParado();
+                }
+            }
+
+
+            if (message.action === "upload-status") {
+
+                const statusTextElement = document.getElementById("statusText");
+
+                if (statusTextElement) {
+
+                    if (message.stage === "uploading") {
+                        const statusElement = document.getElementById("status");
+                        if (statusElement) {
+                            statusElement.hidden = false;
+                        }
+                        statusTextElement.textContent = "Enviando áudio...";
+                    }
+
+                    if (message.stage === "done") {
+                        mostrarSucessoSupabase();
+                        carregarHistorico();
+                        carregarProgressoGeral();
+                        carregarProgresso(moduloDetectado);
+                    }
+
+                    if (message.stage === "error") {
+                        mostrarErro(message.error || "Erro ao enviar áudio.");
+                    }
                 }
             }
         }
@@ -314,130 +390,6 @@ async function alternarTema() {
 
 
 // ================================================================
-// CARREGAR PASTA
-// ================================================================
-
-async function carregarPasta() {
-
-    const folderPathElement =
-        document.getElementById("folderPath");
-
-    if (!folderPathElement) {
-        return;
-    }
-
-    try {
-
-        const saved =
-            await chrome.storage.local.get(
-                ["outputFolder"]
-            );
-
-        if (
-            saved.outputFolder &&
-            saved.outputFolder.trim()
-        ) {
-
-            folderPathElement.textContent =
-                saved.outputFolder;
-
-        } else {
-
-            folderPathElement.textContent =
-                "Clique para selecionar a pasta";
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao carregar pasta:",
-            error
-        );
-
-        folderPathElement.textContent =
-            "Clique para selecionar a pasta";
-    }
-}
-
-
-// ================================================================
-// SELECIONAR PASTA WINDOWS
-// ================================================================
-
-async function selecionarPasta() {
-
-    const folderPathElement =
-        document.getElementById("folderPath");
-
-    const statusTextElement =
-        document.getElementById("statusText");
-
-    if (folderPathElement) {
-
-        folderPathElement.textContent =
-            "Abrindo seletor de pasta...";
-    }
-
-    try {
-
-        const response =
-            await chrome.runtime.sendMessage({
-                action: "select-folder"
-            });
-
-        console.log(
-            "Resposta seleção:",
-            response
-        );
-
-        if (
-            response &&
-            response.success &&
-            response.folder
-        ) {
-
-            if (folderPathElement) {
-
-                folderPathElement.textContent =
-                    response.folder;
-            }
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Pasta configurada";
-            }
-
-        } else {
-
-            await carregarPasta();
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Aula detectada";
-            }
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao selecionar pasta:",
-            error
-        );
-
-        await carregarPasta();
-
-        if (statusTextElement) {
-
-            statusTextElement.textContent =
-                "Erro ao selecionar pasta";
-        }
-    }
-}
-
-
-// ================================================================
 // INICIAR
 // ================================================================
 
@@ -456,21 +408,6 @@ async function iniciarGravacao() {
                 ["outputFolder"]
             );
 
-        if (
-            !saved.outputFolder ||
-            !saved.outputFolder.trim()
-        ) {
-
-            if (statusTextElement) {
-
-                statusTextElement.textContent =
-                    "Selecione uma pasta antes de gravar.";
-            }
-
-            return;
-        }
-
-
         const title =
             titleElement?.textContent ||
             "aula";
@@ -482,6 +419,8 @@ async function iniciarGravacao() {
                 action: "start-recording",
 
                 title: title,
+
+                moduleName: moduloDetectado,
 
                 outputFolder:
                     saved.outputFolder
@@ -574,6 +513,12 @@ async function pararGravacao() {
         atualizarInterfaceParado();
 
 
+        const statusElement = document.getElementById("status");
+
+        if (statusElement) {
+            statusElement.hidden = false;
+        }
+
         if (statusTextElement) {
 
             statusTextElement.textContent =
@@ -637,6 +582,8 @@ function atualizarInterfaceGravando() {
 
 
     if (status) {
+
+        status.hidden = false;
 
         status.classList.remove(
             "is-success",
@@ -711,6 +658,8 @@ function atualizarInterfaceParado() {
 
     if (status) {
 
+        status.hidden = true;
+
         status.classList.remove(
             "is-recording",
             "is-error"
@@ -733,12 +682,10 @@ function atualizarInterfaceParado() {
 
 
 // ================================================================
-// SUCESSO
+// SUCESSO SUPABASE
 // ================================================================
 
-function mostrarSucessoDownload(
-    filename
-) {
+function mostrarSucessoSupabase() {
 
     const status =
         document.getElementById(
@@ -751,6 +698,8 @@ function mostrarSucessoDownload(
         );
 
     if (status) {
+
+        status.hidden = false;
 
         status.classList.remove(
             "is-recording",
@@ -765,12 +714,14 @@ function mostrarSucessoDownload(
     if (statusText) {
 
         statusText.textContent =
-            "Áudio salvo com sucesso!";
+            "Aula enviada com sucesso!";
     }
 
     setTimeout(() => {
 
         if (status) {
+
+            status.hidden = true;
 
             status.classList.remove(
                 "is-success"
@@ -780,16 +731,234 @@ function mostrarSucessoDownload(
         if (statusText) {
 
             statusText.textContent =
-                "Aula detectada";
+                "Aguardando transcrição.";
         }
 
     }, 5000);
+}
 
 
-    console.log(
-        "Áudio salvo:",
-        filename
-    );
+// ================================================================
+// CONEXÃO COM O BANCO DE DADOS
+// ================================================================
+
+function atualizarStatusBanco(conectado) {
+
+    const dbStatus = document.getElementById("dbStatus");
+    const dbStatusText = document.getElementById("dbStatusText");
+
+    if (!dbStatus) {
+        return;
+    }
+
+    dbStatus.classList.toggle("db-status-ok", conectado);
+    dbStatus.classList.toggle("db-status-off", !conectado);
+
+    if (dbStatusText) {
+        dbStatusText.textContent = conectado
+            ? "Conectado"
+            : "Sem conexão";
+    }
+}
+
+
+// ================================================================
+// HISTÓRICO DE ENVIOS
+// ================================================================
+
+const HISTORY_STATUS_LABEL = {
+    uploaded: "Enviado",
+    processing: "Transcrevendo",
+    completed: "Concluído",
+    failed: "Falhou"
+};
+
+async function carregarHistorico() {
+
+    const listElement = document.getElementById("historyList");
+
+    if (!listElement) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await chrome.runtime.sendMessage({
+                action: "get-upload-history"
+            });
+
+        atualizarStatusBanco(!response?.error);
+
+        const history = response?.history || [];
+
+        if (history.length === 0) {
+
+            listElement.innerHTML =
+                '<div class="history-empty">Nenhuma aula enviada ainda.</div>';
+
+            return;
+        }
+
+        listElement.innerHTML = history
+            .map(renderHistoryItem)
+            .join("");
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao carregar histórico:",
+            error
+        );
+
+        listElement.innerHTML =
+            '<div class="history-empty">Não foi possível carregar o histórico.</div>';
+    }
+}
+
+function renderHistoryItem(item) {
+
+    const titulo = item.lessons
+        ? `${item.lessons.lesson_number} — ${item.lessons.title}`
+        : item.filename;
+
+    const meta = [
+        item.courses?.name,
+        item.modules ? `Módulo ${item.modules.module_number}` : null
+    ]
+        .filter(Boolean)
+        .join(" · ");
+
+    const dataFormatada = formatarDataHora(item.created_at);
+
+    const statusLabel =
+        HISTORY_STATUS_LABEL[item.status] || item.status;
+
+    return `
+        <div class="history-item">
+            <div class="history-item-title">${escapeHtml(titulo)}</div>
+            ${meta ? `<div class="history-item-meta">${escapeHtml(meta)}</div>` : ""}
+            <div class="history-item-date">
+                <span>${dataFormatada}</span>
+                <span class="history-item-status status-${item.status}">${escapeHtml(statusLabel)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function formatarDataHora(isoString) {
+
+    if (!isoString) {
+        return "—";
+    }
+
+    const data = new Date(isoString);
+
+    if (Number.isNaN(data.getTime())) {
+        return "—";
+    }
+
+    const dataParte = data.toLocaleDateString("pt-BR");
+    const horaParte = data.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+
+    return `${dataParte} às ${horaParte}`;
+}
+
+function escapeHtml(texto) {
+
+    const div = document.createElement("div");
+    div.textContent = texto ?? "";
+    return div.innerHTML;
+}
+
+
+// ================================================================
+// PROGRESSO GERAL DO CURSO
+// ================================================================
+
+async function carregarProgressoGeral() {
+
+    const valueElement = document.getElementById("overallProgressValue");
+    const fillElement = document.getElementById("overallProgressFill");
+
+    if (!valueElement) {
+        return;
+    }
+
+    try {
+
+        const response = await chrome.runtime.sendMessage({ action: "get-overall-progress" });
+
+        const progress = response?.progress;
+
+        if (!progress) {
+            return;
+        }
+
+        valueElement.textContent = `${progress.percent}%`;
+
+        if (fillElement) {
+            fillElement.style.width = `${progress.percent}%`;
+        }
+
+    } catch (error) {
+
+        console.warn("Erro ao carregar progresso geral do curso:", error);
+    }
+}
+
+
+// ================================================================
+// PROGRESSO DO MODULO ATUAL
+// ================================================================
+
+async function carregarProgresso(moduleName) {
+
+    const labelElement = document.getElementById("moduleProgressLabel");
+    const valueElement = document.getElementById("moduleProgressValue");
+    const fillElement = document.getElementById("moduleProgressFill");
+
+    if (!labelElement || !valueElement) {
+        return;
+    }
+
+    if (!moduleName) {
+        labelElement.textContent = "Módulo atual";
+        valueElement.textContent = "não identificado";
+        if (fillElement) fillElement.style.width = "0%";
+        return;
+    }
+
+    try {
+
+        const response = await chrome.runtime.sendMessage({
+            action: "get-module-progress",
+            moduleName
+        });
+
+        const progress = response?.progress;
+
+        if (!progress || !progress.found) {
+            labelElement.textContent = moduleName;
+            valueElement.textContent = "não cadastrado";
+            if (fillElement) fillElement.style.width = "0%";
+            return;
+        }
+
+        labelElement.textContent = progress.moduleName;
+        valueElement.textContent = `${progress.percent}%`;
+
+        if (fillElement) {
+            fillElement.style.width = `${progress.percent}%`;
+        }
+
+    } catch (error) {
+
+        console.warn("Erro ao carregar progresso do módulo:", error);
+    }
 }
 
 
@@ -812,6 +981,8 @@ function mostrarErro(
         );
 
     if (status) {
+
+        status.hidden = false;
 
         status.classList.remove(
             "is-recording",

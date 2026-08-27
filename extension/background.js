@@ -1,4 +1,58 @@
+importScripts("config.js", "lib/supabase.js", "lib/session.js");
+
 let recording = false;
+
+
+// ================================================================
+// HEARTBEAT DE PRESENCA (last_seen do usuário logado)
+// ================================================================
+//
+// Enquanto o usuário estiver logado, a extensão atualiza
+// profiles.last_seen periodicamente para que a dashboard possa
+// mostrar se ele está "online" (usando a extensão agora) ou
+// "offline" — mesmo padrão do heartbeat do worker de transcrição.
+// ================================================================
+
+const HEARTBEAT_ALARM = "a3os-heartbeat";
+const HEARTBEAT_INTERVAL_MINUTES = 0.5; // 30s
+
+async function enviarHeartbeat() {
+
+    try {
+
+        const user = await A3Session.getCurrentUser();
+
+        if (!user) {
+            return;
+        }
+
+        const token = await A3Session.getValidAccessToken();
+
+        await A3Supabase.restUpdate(
+            "profiles",
+            `id=eq.${user.id}`,
+            { last_seen: new Date().toISOString() },
+            token
+        );
+
+    } catch (error) {
+
+        console.warn("Erro ao enviar heartbeat:", error);
+    }
+}
+
+chrome.alarms.create(HEARTBEAT_ALARM, {
+    periodInMinutes: HEARTBEAT_INTERVAL_MINUTES
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+
+    if (alarm.name === HEARTBEAT_ALARM) {
+        enviarHeartbeat();
+    }
+});
+
+enviarHeartbeat();
 
 let currentRecording = {
     title: "aula",
@@ -167,7 +221,8 @@ async function consultarOffscreenGravando() {
 
 async function iniciarGravacao(
     title,
-    outputFolder
+    outputFolder,
+    moduleName
 ) {
 
     try {
@@ -237,17 +292,6 @@ async function iniciarGravacao(
         }
 
 
-        if (
-            !outputFolder ||
-            !outputFolder.trim()
-        ) {
-
-            throw new Error(
-                "Nenhuma pasta de destino configurada."
-            );
-        }
-
-
         await salvarEstado({
 
             currentRecording: {
@@ -257,7 +301,11 @@ async function iniciarGravacao(
                     "aula",
 
                 outputFolder:
-                    outputFolder
+                    outputFolder,
+
+                moduleName:
+                    moduleName ||
+                    null
             }
         });
 
@@ -450,7 +498,7 @@ function selecionarPastaNative() {
 
                 port =
                     chrome.runtime.connectNative(
-                        "com.a3os.folderpicker"
+                        "com.a3os.folderpicker.dev"
                     );
 
             } catch (error) {
@@ -566,7 +614,7 @@ function salvarAudioNative(
 
                 port =
                     chrome.runtime.connectNative(
-                        "com.a3os.folderpicker"
+                        "com.a3os.folderpicker.dev"
                     );
 
             } catch (error) {
@@ -652,6 +700,149 @@ function salvarAudioNative(
             });
         }
     );
+}
+
+
+// ================================================================
+// RESOLVER CURSO / MODULO / NUMERO DA AULA A PARTIR DO TITULO
+// ================================================================
+//
+// A extensao detecta o titulo direto da pagina (ex: "01 - Curso Vray 6 -
+// Apresentacao"). Sem selecao manual, curso/modulo/numero da aula precisam
+// ser derivados desse titulo e criados automaticamente no Supabase se ainda
+// nao existirem. Formato esperado: "<numero> - <curso> - <titulo da aula>".
+// Quando o titulo nao segue esse formato, cai num curso generico e o numero
+// da aula vira sequencial dentro do modulo.
+
+async function resolverCursoModulo(title, token, moduleName) {
+
+    const tituloBruto = (title || "aula").trim();
+
+    const match = tituloBruto.match(
+        /^\s*(\d+)\s*-\s*(.+?)\s*-\s*(.+?)\s*$/
+    );
+
+    const courseName = match ? match[2] : "Aulas sem curso identificado";
+    const lessonTitle = match ? match[3] : tituloBruto;
+    let lessonNumber = match ? parseInt(match[1], 10) : null;
+
+    let course = (
+        await A3Supabase.restSelect(
+            "courses",
+            `select=id&name=eq.${encodeURIComponent(courseName)}`,
+            token
+        )
+    )[0];
+
+    if (!course) {
+        course = await A3Supabase.restInsert(
+            "courses",
+            { name: courseName },
+            token
+        );
+    }
+
+    // ============================================================
+    // MODULO
+    // ============================================================
+    // Nunca assumimos "módulo 1" às cegas: cursos podem já ter uma
+    // grade real pré-cadastrada (ex.: módulo 1 sendo "SKETCHUP
+    // 2024/2025"), e jogar toda aula sem número de módulo detectado
+    // ali dentro polui o progresso desse módulo. Em vez disso:
+    // 1) se detectamos o nome do módulo na página, procuramos um
+    //    módulo já existente com esse nome nesse curso;
+    // 2) se não encontrarmos (curso novo ou nome não bateu), caímos
+    //    num módulo "coringa" isolado, que nunca colide com módulos
+    //    reais da grade.
+    // ============================================================
+
+    const moduleNameLimpo = (moduleName || "").trim();
+
+    let mod = null;
+
+    if (moduleNameLimpo) {
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id&course_id=eq.${course.id}&name=eq.${encodeURIComponent(moduleNameLimpo)}`,
+                token
+            )
+        )[0];
+    }
+
+    if (!mod && moduleNameLimpo) {
+        const existentesCurso = await A3Supabase.restSelect(
+            "modules",
+            `select=module_number&course_id=eq.${course.id}&order=module_number.desc&limit=1`,
+            token
+        );
+
+        const proximoNumero = existentesCurso[0]
+            ? existentesCurso[0].module_number + 1
+            : 1;
+
+        mod = await A3Supabase.restInsert(
+            "modules",
+            {
+                course_id: course.id,
+                module_number: proximoNumero,
+                name: moduleNameLimpo
+            },
+            token
+        );
+    }
+
+    if (!mod) {
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id&course_id=eq.${course.id}&name=eq.Aulas sem módulo identificado`,
+                token
+            )
+        )[0];
+    }
+
+    if (!mod) {
+        const existentesCurso = await A3Supabase.restSelect(
+            "modules",
+            `select=module_number&course_id=eq.${course.id}&order=module_number.desc&limit=1`,
+            token
+        );
+
+        const proximoNumero = existentesCurso[0]
+            ? existentesCurso[0].module_number + 1
+            : 1;
+
+        mod = await A3Supabase.restInsert(
+            "modules",
+            {
+                course_id: course.id,
+                module_number: proximoNumero,
+                name: "Aulas sem módulo identificado"
+            },
+            token
+        );
+    }
+
+    if (lessonNumber === null) {
+
+        const existentes = await A3Supabase.restSelect(
+            "lessons",
+            `select=lesson_number&module_id=eq.${mod.id}&order=lesson_number.desc&limit=1`,
+            token
+        );
+
+        lessonNumber = existentes[0]
+            ? existentes[0].lesson_number + 1
+            : 1;
+    }
+
+    return {
+        courseId: course.id,
+        moduleId: mod.id,
+        lessonNumber,
+        lessonTitle
+    };
 }
 
 
@@ -754,7 +945,9 @@ chrome.runtime.onMessage.addListener(
 
                 message.title,
 
-                message.outputFolder
+                message.outputFolder,
+
+                message.moduleName
 
             ).then(
                 response => {
@@ -813,15 +1006,137 @@ chrome.runtime.onMessage.addListener(
 
                 try {
 
-                    const response =
-                        await salvarAudioNative(
+                    if (
+                        currentRecording.outputFolder &&
+                        currentRecording.outputFolder.trim()
+                    ) {
 
-                            currentRecording.outputFolder,
+                        try {
 
-                            message.filename,
+                            await salvarAudioNative(
 
-                            message.chunks
+                                currentRecording.outputFolder,
+
+                                message.filename,
+
+                                message.chunks
+                            );
+
+                        } catch (nativeError) {
+
+                            console.error(
+                                "A3-OS: falha ao salvar cópia local (Native Host), seguindo só com o Supabase:",
+                                nativeError
+                            );
+                        }
+                    }
+
+
+                    try {
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "uploading"
+                        });
+
+                        const token = await A3Session.getValidAccessToken();
+                        const user = await A3Session.getCurrentUser();
+
+                        if (!token || !user) {
+                            throw new Error("Sessão expirada. Faça login novamente.");
+                        }
+
+                        const selection = await resolverCursoModulo(
+                            currentRecording.title,
+                            token,
+                            currentRecording.moduleName
                         );
+
+                        const lessonRow = await A3Supabase.restInsert(
+                            "lessons",
+                            {
+                                module_id: selection.moduleId,
+                                lesson_number: selection.lessonNumber,
+                                title: selection.lessonTitle
+                            },
+                            token
+                        ).catch(async () => {
+                            const existing = await A3Supabase.restSelect(
+                                "lessons",
+                                `select=id&module_id=eq.${selection.moduleId}&lesson_number=eq.${selection.lessonNumber}`,
+                                token
+                            );
+                            return existing[0];
+                        });
+
+                        // message.chunks são strings base64 (contrato com o Native Host, NÃO alterar
+                        // o que é passado para salvarAudioNative). Para o upload ao Supabase, os
+                        // bytes reais do áudio precisam ser decodificados antes de montar o Blob,
+                        // senão o arquivo enviado é texto base64 em vez do áudio binário.
+                        const audioByteArrays = message.chunks.map((chunk) => {
+                            const binary = atob(chunk);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            return bytes;
+                        });
+
+                        const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
+
+                        // O Supabase Storage rejeita chaves com espaco/acento mesmo
+                        // com URL-encoding (valida a chave decodificada). O nome
+                        // original (com espacos/acentos) continua guardado em
+                        // audio_files.filename para exibicao.
+                        const nomeStorageSeguro = message.filename
+                            .normalize("NFD")
+                            .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+                            .replace(/[^A-Za-z0-9._-]/g, "_");
+
+                        const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${nomeStorageSeguro}`;
+
+                        await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
+
+                        const audioFileRow = await A3Supabase.restInsert(
+                            "audio_files",
+                            {
+                                course_id: selection.courseId,
+                                module_id: selection.moduleId,
+                                lesson_id: lessonRow.id,
+                                uploaded_by: user.id,
+                                storage_path: storagePath,
+                                filename: message.filename,
+                                mime_type: "audio/webm",
+                                file_size: audioBlob.size,
+                                status: "uploaded"
+                            },
+                            token
+                        );
+
+                        await A3Supabase.restInsert(
+                            "transcription_jobs",
+                            {
+                                audio_file_id: audioFileRow.id,
+                                status: "pending"
+                            },
+                            token
+                        );
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "done"
+                        });
+
+                    } catch (uploadError) {
+
+                        console.error("A3-OS: erro no upload para o Supabase:", uploadError);
+
+                        chrome.runtime.sendMessage({
+                            action: "upload-status",
+                            stage: "error",
+                            error: uploadError.message
+                        });
+                    }
 
 
                     await salvarEstado({
@@ -840,7 +1155,6 @@ chrome.runtime.onMessage.addListener(
                             "download-success",
 
                         filename:
-                            response.filename ||
                             message.filename
                     });
 
@@ -881,6 +1195,316 @@ chrome.runtime.onMessage.addListener(
 
 
             return false;
+        }
+
+
+        // ========================================================
+        // LOGIN
+        // ========================================================
+
+        if (message.action === "login") {
+
+            A3Session.login(message.email, message.password)
+                .then(user => {
+                    sendResponse({ success: true, user });
+                })
+                .catch(error => {
+                    sendResponse({ success: false, error: error.message });
+                });
+
+            return true;
+        }
+
+
+        // ========================================================
+        // LOGOUT
+        // ========================================================
+
+        if (message.action === "logout") {
+
+            A3Session.logout()
+                .then(() => {
+                    sendResponse({ success: true });
+                })
+                .catch(error => {
+                    sendResponse({ success: false, error: error.message });
+                });
+
+            return true;
+        }
+
+
+        // ========================================================
+        // SESSAO ATUAL
+        // ========================================================
+
+        if (message.action === "get-current-user") {
+
+            (async () => {
+
+                const user = await A3Session.getCurrentUser();
+
+                if (!user) {
+                    sendResponse({ user: null });
+                    return;
+                }
+
+                let displayName = null;
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    const profiles = await A3Supabase.restSelect(
+                        "profiles",
+                        `select=display_name&id=eq.${user.id}`,
+                        token
+                    );
+
+                    displayName = profiles?.[0]?.display_name || null;
+
+                } catch (error) {
+
+                    console.warn("Erro ao buscar nome do usuário:", error);
+                }
+
+                sendResponse({ user: { ...user, displayName } });
+
+                enviarHeartbeat();
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // LISTAR CURSOS
+        // ========================================================
+
+        if (message.action === "get-courses") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ courses: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const courses = await A3Supabase.restSelect(
+                        "courses",
+                        "select=id,name&order=name.asc",
+                        token
+                    );
+
+                    sendResponse({ courses });
+
+                } catch (error) {
+
+                    sendResponse({ courses: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // HISTORICO DE ENVIOS DO USUARIO
+        // ========================================================
+
+        if (message.action === "get-upload-history") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+                    const user = await A3Session.getCurrentUser();
+
+                    if (!token || !user) {
+                        sendResponse({ history: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const history = await A3Supabase.restSelect(
+                        "audio_files",
+                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name)&uploaded_by=eq.${user.id}&order=created_at.desc&limit=20`,
+                        token
+                    );
+
+                    sendResponse({ history });
+
+                } catch (error) {
+
+                    sendResponse({ history: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // LISTAR MODULOS DE UM CURSO
+        // ========================================================
+
+        if (message.action === "get-modules") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ modules: [], error: "not-authenticated" });
+                        return;
+                    }
+
+                    const modules = await A3Supabase.restSelect(
+                        "modules",
+                        `select=id,module_number,name&course_id=eq.${message.courseId}&order=module_number.asc`,
+                        token
+                    );
+
+                    sendResponse({ modules });
+
+                } catch (error) {
+
+                    sendResponse({ modules: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // PROGRESSO GERAL DO CURSO (todas as aulas de todos os
+        // modulos, em %)
+        // ========================================================
+
+        if (message.action === "get-overall-progress") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ error: "not-authenticated" });
+                        return;
+                    }
+
+                    const courses = await A3Supabase.restSelect(
+                        "courses",
+                        "select=total_lessons,modules(lessons(status))",
+                        token
+                    );
+
+                    let totalLessons = 0;
+                    let completedLessons = 0;
+
+                    (courses || []).forEach((curso) => {
+
+                        totalLessons += curso.total_lessons || 0;
+
+                        (curso.modules || []).forEach((modulo) => {
+
+                            const aulas = modulo.lessons || [];
+                            completedLessons += aulas.filter((l) => l.status === "completed").length;
+                        });
+                    });
+
+                    const percent = totalLessons > 0
+                        ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
+                        : 0;
+
+                    sendResponse({
+                        progress: { totalLessons, completedLessons, percent }
+                    });
+
+                } catch (error) {
+
+                    sendResponse({ error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // PROGRESSO DO MODULO ATUAL (aulas concluidas no modulo
+        // detectado na pagina, em %)
+        // ========================================================
+
+        if (message.action === "get-module-progress") {
+
+            (async () => {
+
+                try {
+
+                    const token = await A3Session.getValidAccessToken();
+
+                    if (!token) {
+                        sendResponse({ error: "not-authenticated" });
+                        return;
+                    }
+
+                    const nomeModulo = (message.moduleName || "").trim();
+
+                    if (!nomeModulo) {
+                        sendResponse({ progress: { found: false } });
+                        return;
+                    }
+
+                    const modules = await A3Supabase.restSelect(
+                        "modules",
+                        `select=name,total_lessons,lessons(status)&name=eq.${encodeURIComponent(nomeModulo)}`,
+                        token
+                    );
+
+                    const modulo = modules?.[0];
+
+                    if (!modulo) {
+                        sendResponse({ progress: { found: false, moduleName: nomeModulo } });
+                        return;
+                    }
+
+                    const aulas = modulo.lessons || [];
+                    const completed = aulas.filter((l) => l.status === "completed").length;
+                    const total = modulo.total_lessons || 0;
+                    const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+
+                    sendResponse({
+                        progress: {
+                            found: true,
+                            moduleName: modulo.name,
+                            completed,
+                            total,
+                            percent
+                        }
+                    });
+
+                } catch (error) {
+
+                    sendResponse({ error: error.message });
+                }
+
+            })();
+
+            return true;
         }
     }
 );
