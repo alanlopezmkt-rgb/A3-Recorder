@@ -253,7 +253,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await carregarProgressoGeral();
     await carregarProgresso(moduloDetectado);
 
-    const historyRefreshInterval = setInterval(carregarHistorico, 4000);
+    const historyRefreshInterval = setInterval(carregarHistorico, 500);
     window.addEventListener("unload", () => clearInterval(historyRefreshInterval));
 
 
