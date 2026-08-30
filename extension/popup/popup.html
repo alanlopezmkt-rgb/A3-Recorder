@@ -148,6 +148,14 @@
                 </svg>
             </button>
 
+            <div id="historyFilters" class="history-filters is-collapsed">
+                <button type="button" class="history-filter-btn" data-range="today">Hoje</button>
+                <button type="button" class="history-filter-btn" data-range="yesterday">Ontem</button>
+                <button type="button" class="history-filter-btn" data-range="week">Semana</button>
+                <button type="button" class="history-filter-btn is-active" data-range="all">Tudo</button>
+                <input type="date" id="historyDatePicker" class="history-date-picker" />
+            </div>
+
             <div id="historyList" class="history-list is-collapsed">
                 <div class="history-empty">Carregando...</div>
             </div>

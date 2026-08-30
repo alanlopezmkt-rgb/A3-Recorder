@@ -1332,9 +1332,17 @@ chrome.runtime.onMessage.addListener(
                         return;
                     }
 
+                    // Sem filtro de data: mantém o comportamento original (últimos 20).
+                    // Com filtro: sobe o teto pra não cortar um dia com muitos envios.
+                    const temFiltroData = Boolean(message.startDate && message.endDate);
+                    const limite = temFiltroData ? 200 : 20;
+                    const filtroData = temFiltroData
+                        ? `&created_at=gte.${encodeURIComponent(message.startDate)}&created_at=lt.${encodeURIComponent(message.endDate)}`
+                        : "";
+
                     const history = await A3Supabase.restSelect(
                         "audio_files",
-                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}&order=created_at.desc&limit=20`,
+                        `select=id,filename,created_at,status,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}${filtroData}&order=created_at.desc&limit=${limite}`,
                         token
                     );
 

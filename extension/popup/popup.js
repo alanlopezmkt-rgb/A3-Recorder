@@ -236,6 +236,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const historyToggle = document.getElementById("historyToggle");
     const historyList = document.getElementById("historyList");
+    const historyFilters = document.getElementById("historyFilters");
+    const historyDatePicker = document.getElementById("historyDatePicker");
 
     if (historyToggle && historyList) {
 
@@ -246,6 +248,41 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             historyToggle.setAttribute("aria-expanded", String(!expandido));
             historyList.classList.toggle("is-collapsed", expandido);
+            historyFilters?.classList.toggle("is-collapsed", expandido);
+        });
+    }
+
+    if (historyFilters) {
+
+        historyFilters.querySelectorAll(".history-filter-btn").forEach((btn) => {
+
+            btn.addEventListener("click", () => {
+
+                historyFilters
+                    .querySelectorAll(".history-filter-btn")
+                    .forEach((b) => b.classList.remove("is-active"));
+
+                btn.classList.add("is-active");
+                if (historyDatePicker) historyDatePicker.value = "";
+
+                historyFiltroAtual = { modo: btn.dataset.range };
+                carregarHistorico();
+            });
+        });
+    }
+
+    if (historyDatePicker) {
+
+        historyDatePicker.addEventListener("change", () => {
+
+            if (!historyDatePicker.value) return;
+
+            historyFilters
+                ?.querySelectorAll(".history-filter-btn")
+                .forEach((b) => b.classList.remove("is-active"));
+
+            historyFiltroAtual = { modo: "custom", data: historyDatePicker.value };
+            carregarHistorico();
         });
     }
 
@@ -777,6 +814,51 @@ const HISTORY_STATUS_LABEL = {
     failed: "Falhou"
 };
 
+// Filtro de data ativo no histórico ({ modo: "all" }, "today", "yesterday",
+// "week", ou { modo: "custom", data: "YYYY-MM-DD" }). "all" preserva o
+// comportamento original (últimos 20 envios, sem filtro de data).
+let historyFiltroAtual = { modo: "all" };
+
+function inicioDoDia(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function calcularIntervaloHistorico(filtro) {
+
+    const hoje = inicioDoDia(new Date());
+
+    if (filtro.modo === "today") {
+        const fim = new Date(hoje);
+        fim.setDate(fim.getDate() + 1);
+        return { startDate: hoje.toISOString(), endDate: fim.toISOString() };
+    }
+
+    if (filtro.modo === "yesterday") {
+        const inicio = new Date(hoje);
+        inicio.setDate(inicio.getDate() - 1);
+        return { startDate: inicio.toISOString(), endDate: hoje.toISOString() };
+    }
+
+    if (filtro.modo === "week") {
+        const inicio = new Date(hoje);
+        inicio.setDate(inicio.getDate() - 7);
+        const fim = new Date(hoje);
+        fim.setDate(fim.getDate() + 1);
+        return { startDate: inicio.toISOString(), endDate: fim.toISOString() };
+    }
+
+    if (filtro.modo === "custom" && filtro.data) {
+        const inicio = inicioDoDia(`${filtro.data}T00:00:00`);
+        const fim = new Date(inicio);
+        fim.setDate(fim.getDate() + 1);
+        return { startDate: inicio.toISOString(), endDate: fim.toISOString() };
+    }
+
+    return null;
+}
+
 function statusEfetivo(item) {
 
     if (item.status === "uploaded" || item.status === "processing" || item.status === "failed") {
@@ -806,9 +888,12 @@ async function carregarHistorico() {
 
     try {
 
+        const intervalo = calcularIntervaloHistorico(historyFiltroAtual);
+
         const response =
             await chrome.runtime.sendMessage({
-                action: "get-upload-history"
+                action: "get-upload-history",
+                ...(intervalo || {})
             });
 
         atualizarStatusBanco(!response?.error);
@@ -817,8 +902,11 @@ async function carregarHistorico() {
 
         if (history.length === 0) {
 
-            listElement.innerHTML =
-                '<div class="history-empty">Nenhuma aula enviada ainda.</div>';
+            const mensagem = intervalo
+                ? "Nenhuma aula enviada nesse período."
+                : "Nenhuma aula enviada ainda.";
+
+            listElement.innerHTML = `<div class="history-empty">${mensagem}</div>`;
 
             return;
         }
