@@ -726,13 +726,47 @@ async function resolverCursoModulo(title, token, moduleName) {
     const lessonTitle = match ? match[3] : tituloBruto;
     let lessonNumber = match ? parseInt(match[1], 10) : null;
 
-    let course = (
-        await A3Supabase.restSelect(
-            "courses",
-            `select=id&name=eq.${encodeURIComponent(courseName)}`,
-            token
-        )
-    )[0];
+    const moduleNameLimpo = (moduleName || "").trim();
+
+    // ============================================================
+    // MODULO (busca global antes de decidir o curso)
+    // ============================================================
+    // O texto do curso no título da aba é só a marca/branding da página —
+    // não é confiável pra identificar o software (ex: uma aula de Sketchup
+    // pode ter "Curso Vray 6" no título por causa da marca genérica do
+    // site). O nome do módulo (ex: "SKETCHUP 2024/2025") é quem realmente
+    // identifica o curso/software. Por isso: primeiro procuramos um módulo
+    // já existente com esse nome em QUALQUER curso; se achar, usamos o
+    // curso dele — assim, todo mundo que manda aula do mesmo software cai
+    // sempre no mesmo lugar, não importa o que o título da aba diga.
+    // ============================================================
+
+    let mod = null;
+    let course = null;
+
+    if (moduleNameLimpo) {
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id,course_id&name=eq.${encodeURIComponent(moduleNameLimpo)}&limit=1`,
+                token
+            )
+        )[0];
+
+        if (mod) {
+            course = { id: mod.course_id };
+        }
+    }
+
+    if (!course) {
+        course = (
+            await A3Supabase.restSelect(
+                "courses",
+                `select=id&name=eq.${encodeURIComponent(courseName)}`,
+                token
+            )
+        )[0];
+    }
 
     if (!course) {
         course = await A3Supabase.restInsert(
@@ -742,25 +776,15 @@ async function resolverCursoModulo(title, token, moduleName) {
         );
     }
 
-    // ============================================================
-    // MODULO
-    // ============================================================
     // Nunca assumimos "módulo 1" às cegas: cursos podem já ter uma
     // grade real pré-cadastrada (ex.: módulo 1 sendo "SKETCHUP
     // 2024/2025"), e jogar toda aula sem número de módulo detectado
-    // ali dentro polui o progresso desse módulo. Em vez disso:
-    // 1) se detectamos o nome do módulo na página, procuramos um
-    //    módulo já existente com esse nome nesse curso;
-    // 2) se não encontrarmos (curso novo ou nome não bateu), caímos
-    //    num módulo "coringa" isolado, que nunca colide com módulos
-    //    reais da grade.
-    // ============================================================
+    // ali dentro polui o progresso desse módulo. Se não achamos o módulo
+    // pelo nome globalmente (acima), tentamos de novo só dentro do curso
+    // resolvido; se ainda assim não existir, caímos num módulo "coringa"
+    // isolado, que nunca colide com módulos reais da grade.
 
-    const moduleNameLimpo = (moduleName || "").trim();
-
-    let mod = null;
-
-    if (moduleNameLimpo) {
+    if (!mod && moduleNameLimpo) {
         mod = (
             await A3Supabase.restSelect(
                 "modules",
