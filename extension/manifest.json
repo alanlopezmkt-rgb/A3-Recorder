@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "A3-OS Recorder",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Gravador de áudio para cursos A3-OS.",
 
     "permissions": [
@@ -12,7 +12,8 @@
         "tabCapture",
         "offscreen",
         "nativeMessaging",
-        "alarms"
+        "alarms",
+        "downloads"
     ],
 
     "host_permissions": [

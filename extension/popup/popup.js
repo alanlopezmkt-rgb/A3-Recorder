@@ -59,6 +59,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         );
     }
 
+    // ============================================================
+    // ATUALIZAÇÃO DA EXTENSÃO
+    // ============================================================
+
+    const checkUpdateButton = document.getElementById("checkUpdateButton");
+    if (checkUpdateButton) {
+        checkUpdateButton.addEventListener("click", verificarAtualizacaoExtensao);
+    }
+
 
     // ============================================================
     // DETECTAR TÍTULO DA AULA
@@ -1112,5 +1121,98 @@ function mostrarErro(
         statusText.textContent =
             mensagem ||
             "Ocorreu um erro.";
+    }
+}
+
+// ================================================================
+// ATUALIZAÇÃO DA EXTENSÃO
+//
+// O Chrome não deixa uma extensão "Carregar sem compactação" (modo
+// desenvolvedor) se auto-instalar — só extensões da Chrome Web Store ou
+// forçadas por política de empresa fazem isso. O melhor que dá pra fazer
+// aqui é: checar a versão mais nova no GitHub Releases, baixar o .zip
+// automaticamente se houver uma nova, e mostrar um passo a passo curto
+// pra recarregar a extensão manualmente.
+// ================================================================
+
+const A3OS_RECORDER_REPO = "alanlopezmkt-rgb/A3-Recorder";
+
+function compararVersoes(a, b) {
+    const partesA = a.split(".").map(Number);
+    const partesB = b.split(".").map(Number);
+    const tamanho = Math.max(partesA.length, partesB.length);
+
+    for (let i = 0; i < tamanho; i++) {
+        const numA = partesA[i] || 0;
+        const numB = partesB[i] || 0;
+        if (numA !== numB) return numA - numB;
+    }
+
+    return 0;
+}
+
+async function verificarAtualizacaoExtensao() {
+
+    const updateStatus = document.getElementById("updateStatus");
+    const checkUpdateButton = document.getElementById("checkUpdateButton");
+
+    if (checkUpdateButton) checkUpdateButton.disabled = true;
+    if (updateStatus) {
+        updateStatus.className = "update-status";
+        updateStatus.textContent = "Verificando...";
+    }
+
+    try {
+        const versaoAtual = chrome.runtime.getManifest().version;
+
+        const resposta = await fetch(`https://api.github.com/repos/${A3OS_RECORDER_REPO}/releases/latest`);
+        if (!resposta.ok) {
+            throw new Error(`GitHub respondeu ${resposta.status}`);
+        }
+
+        const release = await resposta.json();
+        const versaoMaisNova = String(release.tag_name || "").replace(/^v/i, "");
+
+        if (!versaoMaisNova || compararVersoes(versaoMaisNova, versaoAtual) <= 0) {
+            if (updateStatus) {
+                updateStatus.classList.add("is-ok");
+                updateStatus.textContent = `Você já está na versão mais recente (${versaoAtual}).`;
+            }
+            return;
+        }
+
+        const asset = (release.assets || []).find((a) => a.name.endsWith(".zip"));
+        if (!asset) {
+            throw new Error("Release novo encontrado, mas sem arquivo .zip anexado.");
+        }
+
+        if (updateStatus) {
+            updateStatus.textContent = `Baixando versão ${versaoMaisNova}...`;
+        }
+
+        await chrome.downloads.download({
+            url: asset.browser_download_url,
+            filename: `A3-OS-Recorder-${versaoMaisNova}.zip`,
+            saveAs: false,
+        });
+
+        if (updateStatus) {
+            updateStatus.classList.add("is-ok");
+            updateStatus.innerHTML =
+                `Nova versão <strong>${versaoMaisNova}</strong> baixada! Pra instalar:` +
+                `<ol>` +
+                `<li>Descompacte o .zip baixado</li>` +
+                `<li>Abra <strong>chrome://extensions</strong></li>` +
+                `<li>Clique em atualizar (⟳) na extensão ou remova e carregue a pasta nova</li>` +
+                `</ol>`;
+        }
+
+    } catch (error) {
+        if (updateStatus) {
+            updateStatus.classList.add("is-error");
+            updateStatus.textContent = `Não foi possível verificar: ${error.message}`;
+        }
+    } finally {
+        if (checkUpdateButton) checkUpdateButton.disabled = false;
     }
 }

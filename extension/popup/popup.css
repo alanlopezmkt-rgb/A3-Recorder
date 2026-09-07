@@ -993,3 +993,60 @@ body {
     background: var(--status-recording-bg);
     color: var(--status-recording-text);
 }
+
+.update-field {
+    margin-top: 4px;
+}
+
+.update-check-button {
+    width: 100%;
+
+    padding: 8px 10px;
+
+    background: none;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+
+    font-size: 11.5px;
+    font-weight: 600;
+
+    color: var(--text-secondary);
+
+    cursor: pointer;
+}
+
+.update-check-button:hover {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+}
+
+.update-check-button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.update-status {
+    margin-top: 8px;
+
+    font-size: 11px;
+    line-height: 1.6;
+
+    color: var(--text-secondary);
+}
+
+.update-status:empty {
+    display: none;
+}
+
+.update-status.is-ok {
+    color: #16a34a;
+}
+
+.update-status.is-error {
+    color: #dc2626;
+}
+
+.update-status ol {
+    margin: 4px 0 0;
+    padding-left: 16px;
+}
