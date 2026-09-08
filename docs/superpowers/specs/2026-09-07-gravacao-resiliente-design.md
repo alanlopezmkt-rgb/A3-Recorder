@@ -63,6 +63,16 @@ Chrome fecha sem avisar.
 Essa camada **não sabe nada sobre grupos ou dias diferentes** — é só
 um seguro de curto prazo para a sessão atual.
 
+**Limpeza após upload confirmado:** assim que um segmento é enviado
+com sucesso para o Supabase (fluxo normal de "Parar", sem interrupção),
+`background.js` apaga do IndexedDB todos os chunks daquele `sessionId`
+imediatamente após a confirmação do upload — o mesmo ponto do código
+que hoje limpa o array `audioChunks` em memória. Uma gravação completa
+e confirmada no banco nunca fica ocupando espaço em disco na máquina
+do usuário. Essa limpeza é condicionada à confirmação de sucesso: se o
+upload falhar, os chunks permanecem no IndexedDB para retry, seguindo
+a mesma regra já descrita em Tratamento de erro.
+
 ### Camada 2 — Grupo de gravação (segmentos entre sessões)
 
 Protege contra a aula ficar espalhada em pedaços que nunca se juntam.
@@ -128,7 +138,8 @@ Quando o usuário clica em "Gravar" numa aula que tem grupo aberto, o
 próximo segmento nasce vinculado a esse grupo. Quando ela finalmente
 clica em "Parar" **de propósito** (não uma interrupção), esse último
 segmento sobe com `is_final: true` e o grupo é removido de
-`recordingGroups`.
+`recordingGroups`. Como qualquer segmento com upload confirmado, seus
+chunks no IndexedDB são apagados nesse momento (regra da Camada 1).
 
 Isso dispara, no lado do servidor, a etapa de junção:
 
