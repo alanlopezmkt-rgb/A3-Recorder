@@ -821,7 +821,8 @@ const HISTORY_STATUS_LABEL = {
     synced: "Na base de conhecimento",
     unsynced: "Transcrito, mas não sincronizado",
     failed: "Falhou",
-    suspeita: "Gravação incompleta"
+    suspeita: "Gravação incompleta",
+    longa: "Possível pausa na gravação"
 };
 
 // Filtro de data ativo no histórico ({ modo: "all" }, "today", "yesterday",
@@ -871,11 +872,12 @@ function calcularIntervaloHistorico(filtro) {
 
 function statusEfetivo(item) {
 
-    // Duração real bem abaixo da esperada pra essa aula (gravação
-    // provavelmente cortada) — prevalece sobre o status de sincronização,
-    // já que é o aviso mais importante pra quem enviou.
+    // Duração real bem diferente da esperada pra essa aula — prevalece
+    // sobre o status de sincronização, já que é o aviso mais importante
+    // pra quem enviou. "curta" (cortada) é mais grave que "longa" (pausada
+    // no meio, mas o áudio existe inteiro), por isso tem status dedicado.
     if (item.duracao_suspeita) {
-        return "suspeita";
+        return item.duracao_tipo === "longa" ? "longa" : "suspeita";
     }
 
     if (item.status === "uploaded" || item.status === "processing" || item.status === "failed") {
@@ -964,9 +966,11 @@ function renderHistoryItem(item) {
     const statusLabel =
         HISTORY_STATUS_LABEL[statusChave] || statusChave;
 
-    const avisoSuspeita = item.duracao_suspeita
-        ? `<div class="history-item-warning">⚠ Minutagem da gravação incorreta: ficou com ${formatarMinutos(item.duration)}, mas essa aula tem ${formatarMinutos(item.duracao_esperada_segundos)} de duração real. Grave de novo.</div>`
-        : "";
+    const avisoSuspeita = !item.duracao_suspeita
+        ? ""
+        : item.duracao_tipo === "longa"
+            ? `<div class="history-item-warning history-item-warning-longa">⚠ Gravação mais longa que o esperado: ficou com ${formatarMinutos(item.duration)}, mas essa aula costuma ter ${formatarMinutos(item.duracao_esperada_segundos)}. Provavelmente ficou pausada no meio — o áudio deve estar completo, mas confira se não tem um trecho grande de silêncio antes de gerar o resumo.</div>`
+            : `<div class="history-item-warning">⚠ Minutagem da gravação incorreta: ficou com ${formatarMinutos(item.duration)}, mas essa aula tem ${formatarMinutos(item.duracao_esperada_segundos)} de duração real. Grave de novo.</div>`;
 
     return `
         <div class="history-item">
