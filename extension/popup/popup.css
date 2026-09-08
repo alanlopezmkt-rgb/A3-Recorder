@@ -989,8 +989,22 @@ body {
     color: #d97706;
 }
 
-.history-item-status.status-failed {
+.history-item-status.status-failed,
+.history-item-status.status-suspeita {
     background: var(--status-recording-bg);
+    color: var(--status-recording-text);
+}
+
+.history-item-warning {
+    margin-top: 6px;
+    padding: 6px 8px;
+
+    background: var(--status-recording-bg);
+    border: 1px solid var(--status-recording-border);
+    border-radius: var(--radius);
+
+    font-size: 10.5px;
+    line-height: 1.4;
     color: var(--status-recording-text);
 }
 

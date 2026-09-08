@@ -820,7 +820,8 @@ const HISTORY_STATUS_LABEL = {
     processing: "Transcrevendo",
     synced: "Na base de conhecimento",
     unsynced: "Transcrito, mas não sincronizado",
-    failed: "Falhou"
+    failed: "Falhou",
+    suspeita: "Gravação incompleta"
 };
 
 // Filtro de data ativo no histórico ({ modo: "all" }, "today", "yesterday",
@@ -869,6 +870,13 @@ function calcularIntervaloHistorico(filtro) {
 }
 
 function statusEfetivo(item) {
+
+    // Duração real bem abaixo da esperada pra essa aula (gravação
+    // provavelmente cortada) — prevalece sobre o status de sincronização,
+    // já que é o aviso mais importante pra quem enviou.
+    if (item.duracao_suspeita) {
+        return "suspeita";
+    }
 
     if (item.status === "uploaded" || item.status === "processing" || item.status === "failed") {
         return item.status;
@@ -956,6 +964,10 @@ function renderHistoryItem(item) {
     const statusLabel =
         HISTORY_STATUS_LABEL[statusChave] || statusChave;
 
+    const avisoSuspeita = item.duracao_suspeita
+        ? `<div class="history-item-warning">⚠ Minutagem da gravação incorreta: ficou com ${formatarMinutos(item.duration)}, mas essa aula tem ${formatarMinutos(item.duracao_esperada_segundos)} de duração real. Grave de novo.</div>`
+        : "";
+
     return `
         <div class="history-item">
             <div class="history-item-title">${escapeHtml(titulo)}</div>
@@ -964,8 +976,22 @@ function renderHistoryItem(item) {
                 <span>${dataFormatada}</span>
                 <span class="history-item-status status-${statusChave}">${escapeHtml(statusLabel)}</span>
             </div>
+            ${avisoSuspeita}
         </div>
     `;
+}
+
+function formatarMinutos(segundos) {
+
+    if (!segundos && segundos !== 0) {
+        return "—";
+    }
+
+    const totalSegundos = Math.round(Number(segundos));
+    const minutos = Math.floor(totalSegundos / 60);
+    const restoSegundos = totalSegundos % 60;
+
+    return `${minutos}min ${String(restoSegundos).padStart(2, "0")}s`;
 }
 
 function formatarDataHora(isoString) {
