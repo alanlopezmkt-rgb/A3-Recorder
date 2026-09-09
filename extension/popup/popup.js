@@ -536,10 +536,16 @@ async function checarDuracaoAntesDeParar() {
     const tituloAula = document.getElementById("title")?.textContent || "aula";
     const moduleName = moduloDetectado;
 
-    const [duracaoResp, elapsedResp] = await Promise.all([
-        chrome.runtime.sendMessage({ action: "get-expected-duration", title: tituloAula, moduleName }),
-        chrome.runtime.sendMessage({ action: "get-elapsed-seconds" })
-    ]);
+    let duracaoResp, elapsedResp;
+    try {
+        [duracaoResp, elapsedResp] = await Promise.all([
+            chrome.runtime.sendMessage({ action: "get-expected-duration", title: tituloAula, moduleName }),
+            chrome.runtime.sendMessage({ action: "get-elapsed-seconds" })
+        ]);
+    } catch (erro) {
+        console.error("Falha ao consultar duração esperada/decorrida antes de parar:", erro);
+        return true; // falha de mensageria — segue direto (fail-open)
+    }
 
     const expectedDurationSeconds = duracaoResp && duracaoResp.expectedDurationSeconds;
     const elapsedSeconds = elapsedResp && elapsedResp.elapsedSeconds;
