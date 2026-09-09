@@ -352,8 +352,13 @@ async function iniciarGravacao(
 
         const lessonKey = A3LessonKey.lessonKey(title, moduleName);
 
-        const groups = await A3RecordingGroups.getGroups();
-        const grupoAberto = groups[lessonKey] || null;
+        let grupoAberto = null;
+        try {
+            const groups = await A3RecordingGroups.getGroups();
+            grupoAberto = groups[lessonKey] || null;
+        } catch (erroGrupos) {
+            console.error("A3-OS: falha ao consultar grupos de gravação abertos, seguindo sem banner:", erroGrupos);
+        }
 
         await criarOffscreen();
 
