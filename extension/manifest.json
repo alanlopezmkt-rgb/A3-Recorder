@@ -13,7 +13,8 @@
         "offscreen",
         "nativeMessaging",
         "alarms",
-        "downloads"
+        "downloads",
+        "notifications"
     ],
 
     "host_permissions": [

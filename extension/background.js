@@ -99,6 +99,17 @@ const ICON_RECORDING = {
 
 
 // ================================================================
+// FORMATACAO DE DURACAO PARA NOTIFICACOES
+// ================================================================
+
+function formatarDuracaoNotificacao(segundos) {
+    const min = Math.floor(segundos / 60);
+    const seg = Math.round(segundos % 60);
+    return `${min}min ${seg}s`;
+}
+
+
+// ================================================================
 // ESTADO PERSISTENTE (sobrevive a reinícios do service worker)
 // ================================================================
 //
@@ -753,6 +764,16 @@ async function reconciliarSessaoOrfa() {
                 });
 
                 await A3RecordingGroups.advanceSegment(marcador.lessonKey, duracaoAproximadaSegundos);
+
+                chrome.notifications.create(`a3-recovery-${marcador.sessionId}`, {
+                    type: "basic",
+                    iconUrl: "icons/icon-normal-128.png",
+                    title: "A3-OS Recorder",
+                    message:
+                        `Recuperamos parte da aula "${marcador.title}"${marcador.moduleName ? ` (${marcador.moduleName})` : ""}: ` +
+                        `${formatarDuracaoNotificacao(duracaoAproximadaSegundos)} gravados antes de fechar. Já enviamos — ` +
+                        `grave essa aula de novo para completar; vamos continuar de onde parou automaticamente.`
+                });
             }
 
             await A3RecordingBackupDb.deleteChunksBySession(marcador.sessionId);
