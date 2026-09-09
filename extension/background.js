@@ -1,4 +1,4 @@
-importScripts("config.js", "lib/supabase.js", "lib/session.js");
+importScripts("config.js", "lib/supabase.js", "lib/session.js", "lib/lesson-key.js");
 
 let recording = false;
 
