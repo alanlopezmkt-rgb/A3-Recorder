@@ -191,6 +191,89 @@ de 7 dias, casos já cobertos pelo spec de gravação resiliente).
 - `expected_duration_seconds` nulo na linha de `lessons` (aula existe mas
   duração nunca foi cadastrada): mesmo tratamento — sem aviso.
 
+## Aviso ao usuário sobre sessões recuperadas (lacuna do feature anterior)
+
+Hoje `reconciliarSessaoOrfa()` (gravação resiliente, crash) e o novo fluxo
+de "Parar mesmo assim" deste spec são **completamente silenciosos**: o
+segmento é enviado e o grupo fica aberto, mas o usuário nunca fica
+sabendo — nem quanto já foi gravado, nem que precisa continuar. Este spec
+fecha essa lacuna para os dois casos (crash e parada manual incompleta),
+já que os dois deixam uma aula "em aberto" na mesma estrutura de grupo.
+
+### Rastrear duração acumulada no grupo
+
+`extension/lib/recording-groups.js` não guarda duração, só
+`nextSegmentIndex`. Passa a receber a duração do segmento recém-enviado:
+
+```js
+// advanceSegment ganha um segundo parâmetro
+async function advanceSegment(lessonKey, segmentDurationSeconds) {
+    const groups = await getGroups();
+    const group = groups[lessonKey];
+    if (!group) {
+        return;
+    }
+    group.nextSegmentIndex += 1;
+    group.totalRecordedSeconds =
+        (group.totalRecordedSeconds || 0) + (segmentDurationSeconds || 0);
+    group.lastActivityAt = new Date().toISOString();
+    await saveGroups(groups);
+}
+```
+
+`createGroup` inicializa `totalRecordedSeconds: (meta.segmentDurationSeconds || 0)`
+para o primeiro segmento. Todo chamador de `advanceSegment` (reconciliação
+e o novo fluxo de "Parar mesmo assim") passa a duração real do segmento
+que acabou de subir — já disponível nos dois pontos (é a mesma duração
+usada para decidir `isFinal`/limiar de 95%, ou, na reconciliação, dá pra
+calcular a partir dos chunks salvos no IndexedDB).
+
+### Notificação ao reconciliar (crash)
+
+Ao final de `reconciliarSessaoOrfa()`, para cada marcador que resultou em
+segmento não-final enviado com sucesso, usa-se `chrome.notifications`
+(permissão nova: `"notifications"` em `manifest.json`) para avisar,
+mesmo com o Chrome recém-aberto e o popup fechado:
+
+> **A3-OS Recorder**
+> Recuperamos parte da aula "Apresentação" (SketchUp 2024): 12min 40s
+> gravados antes de fechar. Já enviamos — grave essa aula de novo para
+> completar; vamos continuar de onde parou automaticamente.
+
+Como a extensão só conhece a duração do **áudio gravado**, não a posição
+no vídeo/apresentação de origem, o texto não promete "comece no minuto
+X do vídeo" — só informa quanto já foi capturado, para o usuário se
+orientar por conta própria.
+
+### Aviso ao começar a gravar uma aula com grupo aberto
+
+Em `iniciarGravacao`, quando já existe um grupo aberto para o
+`lessonKey` (hoje isso já é checado silenciosamente para decidir o
+`recordingGroupId`/`segmentIndex`), o background manda uma mensagem para
+o popup exibir um banner (não-bloqueante, alguém pode já saber e só
+querer gravar):
+
+> Esta aula já tem 12min 40s gravados de uma sessão anterior. Esta
+> gravação vai continuar a partir daí — ao terminar, os dois pedaços
+> serão unidos automaticamente.
+
+### Aviso ao "Parar mesmo assim" (fluxo deste spec)
+
+O modal de "Parar mesmo assim" (seção acima) ganha uma linha final antes
+de fechar, confirmando o que foi salvo:
+
+> Ok, gravamos 3min 12s dessa aula e vamos guardar. Grave essa aula de
+> novo quando puder para completar os outros ~37min.
+
+### Testes (aviso)
+
+- Unitário: `advanceSegment` acumula `totalRecordedSeconds` corretamente
+  em múltiplas chamadas.
+- Manual: repetir os cenários 4 e 5 do QA abaixo e confirmar que (a) a
+  notificação do Chrome aparece com a duração certa ao reconciliar um
+  crash, e (b) o banner aparece ao reiniciar a gravação da mesma aula,
+  mostrando a duração acumulada certa.
+
 ## Testes
 
 - Unitário: função pura de comparação
