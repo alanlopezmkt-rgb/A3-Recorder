@@ -76,6 +76,8 @@ let currentRecording = {
     outputFolder: ""
 };
 
+let pendingIncompleteStop = false;
+
 
 // ================================================================
 // ICONES DA EXTENSAO (normal / gravando)
@@ -131,6 +133,16 @@ async function salvarEstado(parcial) {
         currentRecording = parcial.currentRecording;
     }
 
+    if (
+        Object.prototype.hasOwnProperty.call(
+            parcial,
+            "pendingIncompleteStop"
+        )
+    ) {
+
+        pendingIncompleteStop = parcial.pendingIncompleteStop;
+    }
+
     await chrome.storage.session.set(parcial);
 }
 
@@ -138,7 +150,7 @@ async function carregarEstado() {
 
     const dados =
         await chrome.storage.session.get(
-            ["recording", "currentRecording"]
+            ["recording", "currentRecording", "pendingIncompleteStop"]
         );
 
     recording =
@@ -148,9 +160,13 @@ async function carregarEstado() {
         dados.currentRecording ||
         currentRecording;
 
+    pendingIncompleteStop =
+        !!dados.pendingIncompleteStop;
+
     return {
         recording,
-        currentRecording
+        currentRecording,
+        pendingIncompleteStop
     };
 }
 
@@ -1503,16 +1519,15 @@ chrome.runtime.onMessage.addListener(
             "stop-recording"
         ) {
 
-            pararGravacao()
+            (async () => {
 
-                .then(
-                    response => {
+                await salvarEstado({
+                    pendingIncompleteStop: !!message.duracaoConfirmadaIncompleta
+                });
 
-                        sendResponse(
-                            response
-                        );
-                    }
-                );
+                const response = await pararGravacao();
+                sendResponse(response);
+            })();
 
 
             return true;
@@ -1578,7 +1593,8 @@ chrome.runtime.onMessage.addListener(
 
             (async () => {
 
-                await carregarEstado();
+                const estadoCarregado = await carregarEstado();
+                const isFinal = !estadoCarregado.pendingIncompleteStop;
 
                 try {
 
@@ -1615,10 +1631,12 @@ chrome.runtime.onMessage.addListener(
                             stage: "uploading"
                         });
 
-                        if (message.sessionId) {
+                        if (message.sessionId && isFinal) {
 
                             await marcarMarcadorComoFinal(message.sessionId);
                         }
+                        // se isFinal for false, o marcador permanece isFinal:false —
+                        // mesmo estado de uma sessão interrompida por crash.
 
                         const lessonKey = currentRecording.lessonKey || null;
                         const groups = lessonKey ? await A3RecordingGroups.getGroups() : {};
@@ -1646,11 +1664,35 @@ chrome.runtime.onMessage.addListener(
                             audioBlob,
                             recordingGroupId: existingGroup ? existingGroup.recordingGroupId : null,
                             segmentIndex: existingGroup ? existingGroup.nextSegmentIndex : null,
-                            isFinal: true
+                            isFinal
                         });
 
-                        if (existingGroup) {
-                            await A3RecordingGroups.closeGroup(lessonKey);
+                        if (isFinal) {
+
+                            if (existingGroup) {
+                                await A3RecordingGroups.closeGroup(lessonKey);
+                            }
+
+                        } else {
+
+                            const startedAt = currentRecording.startedAt;
+                            const duracaoSegmentoSegundos = startedAt
+                                ? Math.floor((Date.now() - startedAt) / 1000)
+                                : 0;
+
+                            if (!existingGroup) {
+
+                                await A3RecordingGroups.createGroup(lessonKey, {
+                                    title: currentRecording.title,
+                                    outputFolder: currentRecording.outputFolder,
+                                    moduleName: currentRecording.moduleName,
+                                    segmentDurationSeconds: duracaoSegmentoSegundos
+                                });
+
+                            } else {
+
+                                await A3RecordingGroups.advanceSegment(lessonKey, duracaoSegmentoSegundos);
+                            }
                         }
 
                         if (message.sessionId) {
@@ -1682,7 +1724,8 @@ chrome.runtime.onMessage.addListener(
 
 
                     await salvarEstado({
-                        recording: false
+                        recording: false,
+                        pendingIncompleteStop: false
                     });
 
 
@@ -1708,7 +1751,8 @@ chrome.runtime.onMessage.addListener(
                 } catch (error) {
 
                     await salvarEstado({
-                        recording: false
+                        recording: false,
+                        pendingIncompleteStop: false
                     });
 
 
