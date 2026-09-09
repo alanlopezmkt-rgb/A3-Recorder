@@ -98,6 +98,16 @@ Protege contra a aula ficar espalhada em pedaços que nunca se juntam.
     `segmentIndex = nextSegmentIndex`.
   - **Não existe** → gera um novo `recordingGroupId` (uuid),
     `segmentIndex = 0`.
+
+  **Decisão de implementação (ver plano
+  `docs/superpowers/plans/2026-09-08-gravacao-resiliente.md`, Task 7):**
+  como só existe um botão "Parar", `iniciarGravacao` e um "Parar"
+  deliberado nunca *criam* uma entrada nova em `recordingGroups` — só a
+  reconciliação (seção seguinte) cria um grupo, ao detectar que uma
+  interrupção de fato aconteceu. Um "Parar" deliberado só *reaproveita*
+  um grupo se um já existir para aquele `lessonKey` (ou seja, uma sessão
+  anterior da mesma aula já foi interrompida e reconciliada); caso
+  contrário ele sobe um segmento comum sem grupo, exatamente como hoje.
 - Cada segmento gravado (do `start-recording` até o `stop-recording`
   daquela sessão) vira **uma linha própria em `audio_files`**, com
   três colunas novas:
