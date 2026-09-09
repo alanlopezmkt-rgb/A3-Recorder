@@ -1075,3 +1075,63 @@ body {
     margin: 4px 0 0;
     padding-left: 16px;
 }
+
+/* ================================================================
+   MODAL DE AVISO DE DURAÇÃO
+   ================================================================ */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-box {
+    background: var(--card-bg, #1e2321);
+    border-radius: 10px;
+    padding: 18px 20px;
+    max-width: 300px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.modal-box h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: var(--text);
+}
+
+.modal-box p {
+    margin: 0 0 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.modal-actions button {
+    border: 1px solid var(--border-color, var(--border));
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.modal-actions .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.modal-actions .btn-primary {
+    background: var(--accent-red, #d71920);
+    color: #ffffff;
+    border-color: transparent;
+}

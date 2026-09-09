@@ -410,7 +410,10 @@ async function iniciarGravacao(
                     lessonKey,
 
                 sessionId:
-                    sessionId
+                    sessionId,
+
+                startedAt:
+                    Date.now()
             }
         });
 
@@ -1537,6 +1540,24 @@ chrome.runtime.onMessage.addListener(
                     console.error("A3-OS Recorder: falha ao buscar duração esperada:", error);
                     sendResponse({ expectedDurationSeconds: null });
                 }
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
+        // TEMPO DECORRIDO (consulta so'-leitura, usada pelo popup)
+        // ========================================================
+
+        if (message.action === "get-elapsed-seconds") {
+
+            (async () => {
+                const estado = await carregarEstado();
+                const startedAt = estado.currentRecording && estado.currentRecording.startedAt;
+                sendResponse({
+                    elapsedSeconds: startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
+                });
             })();
 
             return true;

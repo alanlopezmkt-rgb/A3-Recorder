@@ -523,7 +523,69 @@ async function iniciarGravacao() {
 // PARAR
 // ================================================================
 
+function formatarDuracao(segundos) {
+    const min = Math.floor(segundos / 60);
+    const seg = Math.round(segundos % 60);
+    return `${min}min ${seg}s`;
+}
+
+async function checarDuracaoAntesDeParar() {
+    // Retorna true se pode seguir com o "Parar" direto (sem aviso),
+    // false se abriu o modal (o próprio modal decide o próximo passo).
+
+    const tituloAula = document.getElementById("title")?.textContent || "aula";
+    const moduleName = moduloDetectado;
+
+    const [duracaoResp, elapsedResp] = await Promise.all([
+        chrome.runtime.sendMessage({ action: "get-expected-duration", title: tituloAula, moduleName }),
+        chrome.runtime.sendMessage({ action: "get-elapsed-seconds" })
+    ]);
+
+    const expectedDurationSeconds = duracaoResp && duracaoResp.expectedDurationSeconds;
+    const elapsedSeconds = elapsedResp && elapsedResp.elapsedSeconds;
+
+    if (!expectedDurationSeconds || !elapsedSeconds) {
+        return true; // sem dado de referência — segue direto (fail-open)
+    }
+
+    if (elapsedSeconds >= expectedDurationSeconds * 0.95) {
+        return true;
+    }
+
+    mostrarModalDuracao(elapsedSeconds, expectedDurationSeconds);
+    return false;
+}
+
+function mostrarModalDuracao(elapsedSeconds, expectedDurationSeconds) {
+    const modal = document.getElementById("durationWarningModal");
+    const texto = document.getElementById("durationWarningText");
+    const btnContinuar = document.getElementById("durationWarningContinue");
+    const btnPararMesmoAssim = document.getElementById("durationWarningStopAnyway");
+
+    texto.textContent =
+        `Você gravou ${formatarDuracao(elapsedSeconds)}. Essa aula costuma durar cerca de ${formatarDuracao(expectedDurationSeconds)}.`;
+
+    modal.hidden = false;
+
+    const fechar = () => { modal.hidden = true; };
+
+    btnContinuar.onclick = fechar;
+
+    btnPararMesmoAssim.onclick = async () => {
+        fechar();
+        await executarParada(true);
+    };
+}
+
 async function pararGravacao() {
+    const podeSeguir = await checarDuracaoAntesDeParar();
+    if (!podeSeguir) {
+        return; // modal está no ar; o próprio modal decide o próximo passo
+    }
+    await executarParada(false);
+}
+
+async function executarParada(duracaoConfirmadaIncompleta) {
 
     const statusTextElement =
         document.getElementById("statusText");
@@ -533,7 +595,9 @@ async function pararGravacao() {
         const response =
             await chrome.runtime.sendMessage({
 
-                action: "stop-recording"
+                action: "stop-recording",
+
+                duracaoConfirmadaIncompleta
             });
 
 
@@ -570,8 +634,9 @@ async function pararGravacao() {
 
         if (statusTextElement) {
 
-            statusTextElement.textContent =
-                "Processando áudio...";
+            statusTextElement.textContent = duracaoConfirmadaIncompleta
+                ? "Processando áudio (gravação parcial salva)..."
+                : "Processando áudio...";
         }
 
     } catch (error) {
