@@ -776,15 +776,26 @@ async function reconciliarSessaoOrfa() {
 
                 await A3RecordingGroups.advanceSegment(marcador.lessonKey, duracaoAproximadaSegundos);
 
-                chrome.notifications.create(`a3-recovery-${marcador.sessionId}`, {
-                    type: "basic",
-                    iconUrl: "icons/icon-normal-128.png",
-                    title: "A3-OS Recorder",
-                    message:
-                        `Recuperamos parte da aula "${marcador.title}"${marcador.moduleName ? ` (${marcador.moduleName})` : ""}: ` +
-                        `${formatarDuracaoNotificacao(duracaoAproximadaSegundos)} gravados antes de fechar. Já enviamos — ` +
-                        `grave essa aula de novo para completar; vamos continuar de onde parou automaticamente.`
-                });
+                try {
+
+                    chrome.notifications.create(`a3-recovery-${marcador.sessionId}`, {
+                        type: "basic",
+                        iconUrl: "icons/icon-normal-128.png",
+                        title: "A3-OS Recorder",
+                        message:
+                            `Recuperamos parte da aula "${marcador.title}"${marcador.moduleName ? ` (${marcador.moduleName})` : ""}: ` +
+                            `${formatarDuracaoNotificacao(duracaoAproximadaSegundos)} gravados antes de fechar. Já enviamos — ` +
+                            `grave essa aula de novo para completar; vamos continuar de onde parou automaticamente.`
+                    });
+
+                } catch (notificationError) {
+
+                    // Falha aqui (permissao negada pelo SO, id invalido) nunca pode
+                    // abortar a limpeza do marcador de recuperacao logo abaixo -
+                    // senao o marcador fica vivo e o mesmo segmento e' reenviado
+                    // (duplicado) na proxima reconciliacao.
+                    console.error("A3-OS Recorder: falha ao criar notificação de recuperação:", notificationError);
+                }
             }
 
             await A3RecordingBackupDb.deleteChunksBySession(marcador.sessionId);
@@ -1693,17 +1704,17 @@ chrome.runtime.onMessage.addListener(
 
                         const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
 
-                        await enviarParaSupabase({
-                            title: currentRecording.title,
-                            moduleName: currentRecording.moduleName,
-                            filename: message.filename,
-                            audioBlob,
-                            recordingGroupId: existingGroup ? existingGroup.recordingGroupId : null,
-                            segmentIndex: existingGroup ? existingGroup.nextSegmentIndex : null,
-                            isFinal
-                        });
-
                         if (isFinal) {
+
+                            await enviarParaSupabase({
+                                title: currentRecording.title,
+                                moduleName: currentRecording.moduleName,
+                                filename: message.filename,
+                                audioBlob,
+                                recordingGroupId: existingGroup ? existingGroup.recordingGroupId : null,
+                                segmentIndex: existingGroup ? existingGroup.nextSegmentIndex : null,
+                                isFinal: true
+                            });
 
                             if (existingGroup) {
                                 await A3RecordingGroups.closeGroup(lessonKey);
@@ -1711,21 +1722,50 @@ chrome.runtime.onMessage.addListener(
 
                         } else {
 
+                            // Parada incompleta confirmada (isFinal === false). O grupo
+                            // precisa existir/ser criado ANTES do upload, senao o segmento
+                            // sobe com recording_group_id = NULL e fica orfao, nunca sendo
+                            // mesclado com a gravacao seguinte (mesmo padrao usado em
+                            // reconciliarSessaoOrfa).
+
                             const startedAt = currentRecording.startedAt;
                             const duracaoSegmentoSegundos = startedAt
                                 ? Math.floor((Date.now() - startedAt) / 1000)
-                                : 0;
+                                // startedAt ausente (estado parcialmente restaurado / versao
+                                // antiga) - usa a mesma aproximacao por chunks de
+                                // reconciliarSessaoOrfa (timeslice de 30s) em vez de cair em 0.
+                                : message.chunks.length * 30;
 
                             if (!existingGroup) {
 
-                                await A3RecordingGroups.createGroup(lessonKey, {
+                                const grupo = await A3RecordingGroups.createGroup(lessonKey, {
                                     title: currentRecording.title,
                                     outputFolder: currentRecording.outputFolder,
                                     moduleName: currentRecording.moduleName,
                                     segmentDurationSeconds: duracaoSegmentoSegundos
                                 });
 
+                                await enviarParaSupabase({
+                                    title: currentRecording.title,
+                                    moduleName: currentRecording.moduleName,
+                                    filename: message.filename,
+                                    audioBlob,
+                                    recordingGroupId: grupo.recordingGroupId,
+                                    segmentIndex: grupo.nextSegmentIndex,
+                                    isFinal: false
+                                });
+
                             } else {
+
+                                await enviarParaSupabase({
+                                    title: currentRecording.title,
+                                    moduleName: currentRecording.moduleName,
+                                    filename: message.filename,
+                                    audioBlob,
+                                    recordingGroupId: existingGroup.recordingGroupId,
+                                    segmentIndex: existingGroup.nextSegmentIndex,
+                                    isFinal: false
+                                });
 
                                 await A3RecordingGroups.advanceSegment(lessonKey, duracaoSegmentoSegundos);
                             }
