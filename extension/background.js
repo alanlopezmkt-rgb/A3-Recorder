@@ -156,29 +156,81 @@ async function carregarEstado() {
 
 
 // ================================================================
-// MARCADOR DE RECUPERAÇÃO (persistente, sobrevive ao fechamento do
-// Chrome/PC — diferente de chrome.storage.session, que é apagado
-// exatamente no crash que este marcador existe para detectar)
+// MARCADORES DE RECUPERAÇÃO (persistentes, sobrevivem ao fechamento
+// do Chrome/PC — diferente de chrome.storage.session, que é apagado
+// exatamente no crash que estes marcadores existem para detectar)
+//
+// Um mapa (nao um valor unico) porque o usuario pode iniciar uma nova
+// gravacao enquanto o upload de uma gravacao anterior ainda esta' em
+// andamento (ex.: proxima aula, antes do upload lento da anterior
+// terminar) - cada sessao precisa do seu proprio marcador, indexado
+// por sessionId, para que uma nao apague ou sobrescreva a da outra.
 // ================================================================
 
-async function salvarMarcadorRecuperacao(dados) {
+async function salvarMarcadorRecuperacao(sessionId, dados) {
+
+    const armazenado =
+        await chrome.storage.local.get(["a3RecoverySessions"]);
+
+    const marcadores =
+        armazenado.a3RecoverySessions || {};
+
+    marcadores[sessionId] = dados;
 
     await chrome.storage.local.set({
-        a3RecoverySession: dados
+        a3RecoverySessions: marcadores
     });
 }
 
-async function carregarMarcadorRecuperacao() {
+async function marcarMarcadorComoFinal(sessionId) {
 
-    const dados =
-        await chrome.storage.local.get(["a3RecoverySession"]);
+    const armazenado =
+        await chrome.storage.local.get(["a3RecoverySessions"]);
 
-    return dados.a3RecoverySession || null;
+    const marcadores =
+        armazenado.a3RecoverySessions || {};
+
+    if (!marcadores[sessionId]) {
+        return;
+    }
+
+    marcadores[sessionId] = {
+        ...marcadores[sessionId],
+        isFinal: true
+    };
+
+    await chrome.storage.local.set({
+        a3RecoverySessions: marcadores
+    });
 }
 
-async function limparMarcadorRecuperacao() {
+async function listarMarcadoresRecuperacao() {
 
-    await chrome.storage.local.remove("a3RecoverySession");
+    const armazenado =
+        await chrome.storage.local.get(["a3RecoverySessions"]);
+
+    const marcadores =
+        armazenado.a3RecoverySessions || {};
+
+    return Object.keys(marcadores).map((sessionId) => ({
+        sessionId,
+        ...marcadores[sessionId]
+    }));
+}
+
+async function limparMarcadorRecuperacao(sessionId) {
+
+    const armazenado =
+        await chrome.storage.local.get(["a3RecoverySessions"]);
+
+    const marcadores =
+        armazenado.a3RecoverySessions || {};
+
+    delete marcadores[sessionId];
+
+    await chrome.storage.local.set({
+        a3RecoverySessions: marcadores
+    });
 }
 
 
@@ -362,8 +414,7 @@ async function iniciarGravacao(
             }
         });
 
-        await salvarMarcadorRecuperacao({
-            sessionId,
+        await salvarMarcadorRecuperacao(sessionId, {
             lessonKey,
             title: title || "aula",
             outputFolder: outputFolder,
@@ -559,115 +610,134 @@ async function pararGravacao() {
 
 async function reconciliarSessaoOrfa() {
 
-    const marcador = await carregarMarcadorRecuperacao();
+    const marcadores = await listarMarcadoresRecuperacao();
 
-    if (!marcador) {
+    if (!marcadores.length) {
         return;
     }
 
     const gravandoDeVerdade = await consultarOffscreenGravando();
 
+    // So' existe um MediaRecorder ativo por vez no offscreen, entao no
+    // maximo UM dos marcadores pendentes pode corresponder a uma
+    // gravacao genuinamente em andamento (SW so' reiniciou, Chrome
+    // continua aberto). Identifica qual e' esse, usando o sessionId
+    // ja' guardado em chrome.storage.session pelo proprio
+    // iniciarGravacao - essa leitura e' confiavel aqui porque, se
+    // gravandoDeVerdade e' true, o Chrome nunca fechou (so' o service
+    // worker reiniciou), entao chrome.storage.session nunca foi limpo.
+    let liveSessionId = null;
+
     if (gravandoDeVerdade) {
 
-        // Sessao genuinamente em andamento (SW so' reiniciou, Chrome
-        // continua aberto) - nao ha' nada para reconciliar. Sincroniza
-        // o estado local (popup/icone) e sai SEM entrar no bloco
-        // try/finally abaixo, que e' so' para tentativas reais de
-        // recuperacao - isso evita apagar o estado "gravando" de uma
-        // gravacao que continua acontecendo de verdade.
+        const estado = await carregarEstado();
+
+        liveSessionId =
+            estado.currentRecording &&
+            estado.currentRecording.sessionId;
+
         await salvarEstado({
             recording: true,
-            currentRecording: marcador
+            currentRecording: estado.currentRecording
         });
 
         chrome.action.setIcon({ path: ICON_RECORDING });
 
-        return;
-    }
-
-    try {
-
-        const chunks = await A3RecordingBackupDb.getChunksBySession(marcador.sessionId);
-
-        if (!chunks.length) {
-            // Nada foi salvo a tempo (interrupcao antes do primeiro
-            // tick de 30s) - nao ha' o que recuperar.
-            await limparMarcadorRecuperacao();
-            return;
-        }
-
-        console.log(`A3-OS Recorder: recuperando sessão interrompida (${chunks.length} pedaço(s)).`);
-
-        const groups = await A3RecordingGroups.getGroups();
-        let group = groups[marcador.lessonKey];
-
-        const audioBlob = new Blob(chunks.map((c) => c.blob), { type: "audio/webm" });
-
-        const filenameBase = (marcador.title || "aula")
-            .replace(/[<>:"/\\|?*#%]/g, "")
-            .replace(/\s+/g, " ")
-            .trim() || "aula";
-
-        const filename = `${filenameBase}_${Date.now()}.webm`;
-
-        if (marcador.isFinal) {
-
-            // Era um "Parar" deliberado que nao terminou de subir (crash
-            // durante o upload) - finaliza como segmento final, fechando
-            // o grupo se um existir.
-
-            await enviarParaSupabase({
-                title: marcador.title,
-                moduleName: marcador.moduleName,
-                filename,
-                audioBlob,
-                recordingGroupId: group ? group.recordingGroupId : null,
-                segmentIndex: group ? group.nextSegmentIndex : null,
-                isFinal: true
-            });
-
-            if (group) {
-                await A3RecordingGroups.closeGroup(marcador.lessonKey);
-            }
-
-        } else {
-
-            // Interrupcao abrupta no meio de uma gravacao - sobe como
-            // segmento comum (nao final) do grupo.
-
-            if (!group) {
-                group = await A3RecordingGroups.createGroup(marcador.lessonKey, marcador);
-            }
-
-            await enviarParaSupabase({
-                title: marcador.title,
-                moduleName: marcador.moduleName,
-                filename,
-                audioBlob,
-                recordingGroupId: group.recordingGroupId,
-                segmentIndex: group.nextSegmentIndex,
-                isFinal: false
-            });
-
-            await A3RecordingGroups.advanceSegment(marcador.lessonKey);
-        }
-
-        await A3RecordingBackupDb.deleteChunksBySession(marcador.sessionId);
-        await limparMarcadorRecuperacao();
-
-        console.log("A3-OS Recorder: segmento recuperado e enviado com sucesso.");
-
-    } catch (error) {
-
-        // Falha aqui (sem internet, sessao expirada) nao apaga nada -
-        // o marcador e os chunks continuam para a proxima reconciliacao
-        // (proximo boot) tentar de novo.
-        console.error("A3-OS Recorder: falha na reconciliação de sessão órfã:", error);
-
-    } finally {
+    } else {
 
         await salvarEstado({ recording: false });
         chrome.action.setIcon({ path: ICON_NORMAL });
+    }
+
+    for (const marcador of marcadores) {
+
+        if (gravandoDeVerdade && marcador.sessionId === liveSessionId) {
+            // Sessao genuinamente em andamento - nada a reconciliar
+            // para essa entrada especifica.
+            continue;
+        }
+
+        try {
+
+            const chunks = await A3RecordingBackupDb.getChunksBySession(marcador.sessionId);
+
+            if (!chunks.length) {
+                // Nada foi salvo a tempo (interrupcao antes do primeiro
+                // tick de 30s) - nao ha' o que recuperar.
+                await limparMarcadorRecuperacao(marcador.sessionId);
+                continue;
+            }
+
+            console.log(`A3-OS Recorder: recuperando sessão interrompida (${chunks.length} pedaço(s)).`);
+
+            const groups = await A3RecordingGroups.getGroups();
+            let group = groups[marcador.lessonKey];
+
+            const audioBlob = new Blob(chunks.map((c) => c.blob), { type: "audio/webm" });
+
+            const filenameBase = (marcador.title || "aula")
+                .replace(/[<>:"/\\|?*#%]/g, "")
+                .replace(/\s+/g, " ")
+                .trim() || "aula";
+
+            const filename = `${filenameBase}_${Date.now()}.webm`;
+
+            if (marcador.isFinal) {
+
+                // Era um "Parar" deliberado que nao terminou de subir
+                // (crash durante o upload) - finaliza como segmento
+                // final, fechando o grupo se um existir.
+
+                await enviarParaSupabase({
+                    title: marcador.title,
+                    moduleName: marcador.moduleName,
+                    filename,
+                    audioBlob,
+                    recordingGroupId: group ? group.recordingGroupId : null,
+                    segmentIndex: group ? group.nextSegmentIndex : null,
+                    isFinal: true
+                });
+
+                if (group) {
+                    await A3RecordingGroups.closeGroup(marcador.lessonKey);
+                }
+
+            } else {
+
+                // Interrupcao abrupta no meio de uma gravacao - sobe
+                // como segmento comum (nao final) do grupo.
+
+                if (!group) {
+                    group = await A3RecordingGroups.createGroup(marcador.lessonKey, marcador);
+                }
+
+                await enviarParaSupabase({
+                    title: marcador.title,
+                    moduleName: marcador.moduleName,
+                    filename,
+                    audioBlob,
+                    recordingGroupId: group.recordingGroupId,
+                    segmentIndex: group.nextSegmentIndex,
+                    isFinal: false
+                });
+
+                await A3RecordingGroups.advanceSegment(marcador.lessonKey);
+            }
+
+            await A3RecordingBackupDb.deleteChunksBySession(marcador.sessionId);
+            await limparMarcadorRecuperacao(marcador.sessionId);
+
+            console.log("A3-OS Recorder: segmento recuperado e enviado com sucesso.");
+
+        } catch (error) {
+
+            // Falha aqui (sem internet, sessao expirada) nao apaga nada
+            // dessa entrada - o marcador e os chunks dessa sessao
+            // continuam para a proxima reconciliacao (proximo boot)
+            // tentar de novo. Continua o loop para as outras entradas
+            // pendentes, se houver.
+            console.error(`A3-OS Recorder: falha na reconciliação de sessão órfã (${marcador.sessionId}):`, error);
+        }
     }
 }
 
@@ -1416,15 +1486,7 @@ chrome.runtime.onMessage.addListener(
 
                         if (message.sessionId) {
 
-                            const marcador = await carregarMarcadorRecuperacao();
-
-                            if (marcador && marcador.sessionId === message.sessionId) {
-
-                                await salvarMarcadorRecuperacao({
-                                    ...marcador,
-                                    isFinal: true
-                                });
-                            }
+                            await marcarMarcadorComoFinal(message.sessionId);
                         }
 
                         const lessonKey = currentRecording.lessonKey || null;
@@ -1462,7 +1524,7 @@ chrome.runtime.onMessage.addListener(
 
                         if (message.sessionId) {
 
-                            await limparMarcadorRecuperacao();
+                            await limparMarcadorRecuperacao(message.sessionId);
 
                             chrome.runtime.sendMessage({
                                 target: "offscreen",
