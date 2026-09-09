@@ -265,6 +265,42 @@ de fechar, confirmando o que foi salvo:
 > Ok, gravamos 3min 12s dessa aula e vamos guardar. Grave essa aula de
 > novo quando puder para completar os outros ~37min.
 
+### Retomada vs. recomeço do zero: deduplicação automática no merge
+
+Um caso não coberto pelo aviso acima: o usuário grava 12min, para
+incompleto (grupo fica aberto), e depois decide **gravar a aula inteira
+de novo do zero** (não é uma continuação — ele recomeça porque não
+entendeu o conteúdo). Do jeito que o merge funciona hoje
+(`Transcritor Local/supabase_worker.py`, `baixar_segmentos_grupo`), ele
+sempre baixa todos os segmentos do grupo, ordena por `segment_index` e
+concatena com `ffmpeg concat` quando o segmento final chega — sem
+diferenciar "continuação genuína" de "recomeço do zero". No exemplo
+acima, o resultado seria 12min (tentativa errada) + 40min (tentativa
+completa) = 52min duplicados, em vez dos 40min limpos esperados.
+
+Resolve-se no próprio job de merge, sem exigir nenhuma escolha do
+usuário na extensão, reaproveitando `lessons.expected_duration_seconds`
+(já necessário para as seções acima):
+
+1. Ao processar um job com `is_final: true` e `recording_group_id`, antes
+   de baixar e concatenar os outros segmentos, mede-se a duração do
+   **segmento que acabou de chegar** (o final) sozinho — o
+   `supabase_worker.py` já sabe medir duração de áudio via
+   `ffmpeg -f null` (linha ~335, reaproveitar a mesma função).
+2. Busca-se `expected_duration_seconds` da `lessons` correspondente
+   (mesma tabela usada pela extensão).
+3. Se a duração do segmento final sozinho for **≥ 95%** da duração
+   esperada → trata como retomada completa do zero: usa **só esse
+   segmento** como áudio final (pula o concat inteiramente), e os
+   segmentos anteriores do grupo ficam só como histórico no Supabase
+   (não são apagados, só não entram no arquivo final).
+4. Caso contrário (nenhum segmento sozinho cobre a aula) → segue o fluxo
+   atual: baixa todos os segmentos do grupo em ordem e concatena.
+5. Sem `expected_duration_seconds` cadastrado para a aula (mesmo
+   fallback das outras seções) → sempre concatena tudo (comportamento
+   atual), já que não há como distinguir os dois casos sem uma
+   referência de duração.
+
 ### Testes (aviso)
 
 - Unitário: `advanceSegment` acumula `totalRecordedSeconds` corretamente
@@ -273,6 +309,15 @@ de fechar, confirmando o que foi salvo:
   notificação do Chrome aparece com a duração certa ao reconciliar um
   crash, e (b) o banner aparece ao reiniciar a gravação da mesma aula,
   mostrando a duração acumulada certa.
+- Unitário (Transcritor Local): a função de decisão do merge (segmento
+  final sozinho ≥95% → usa só ele; caso contrário concatena tudo) com
+  casos limite: segmento final exatamente no limiar, grupo sem duração
+  esperada cadastrada, grupo com 3+ segmentos onde só o último cobre a
+  aula sozinho.
+- Manual: repetir o cenário 4/5, mas em vez de completar com um segundo
+  segmento parcial, gravar a aula inteira de novo do zero na segunda vez
+  → conferir que o áudio final no Supabase tem só os ~40min da segunda
+  gravação, sem os 12min da primeira tentativa concatenados na frente.
 
 ## Testes
 
