@@ -350,6 +350,11 @@ async function iniciarGravacao(
 
     try {
 
+        const lessonKey = A3LessonKey.lessonKey(title, moduleName);
+
+        const groups = await A3RecordingGroups.getGroups();
+        const grupoAberto = groups[lessonKey] || null;
+
         await criarOffscreen();
 
 
@@ -389,7 +394,8 @@ async function iniciarGravacao(
             );
 
             return {
-                success: true
+                success: true,
+                grupoAberto: grupoAberto ? { totalRecordedSeconds: grupoAberto.totalRecordedSeconds } : null
             };
         }
 
@@ -415,7 +421,6 @@ async function iniciarGravacao(
         }
 
 
-        const lessonKey = A3LessonKey.lessonKey(title, moduleName);
         const sessionId = crypto.randomUUID();
 
         await salvarEstado({
@@ -530,7 +535,8 @@ async function iniciarGravacao(
 
 
         return {
-            success: true
+            success: true,
+            grupoAberto: grupoAberto ? { totalRecordedSeconds: grupoAberto.totalRecordedSeconds } : null
         };
 
 

@@ -317,6 +317,20 @@ body {
 }
 
 /* ================================================================
+   BANNER DE INFORMAÇÃO (grupo aberto)
+   ================================================================ */
+
+.info-banner {
+    background: var(--surface, #262a25);
+    border: 1px solid var(--border, #3a3e37);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    margin-bottom: 10px;
+    color: var(--text-secondary, inherit);
+}
+
+/* ================================================================
    CAMPOS
    ================================================================ */
 

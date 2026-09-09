@@ -500,6 +500,15 @@ async function iniciarGravacao() {
             return;
         }
 
+        if (response.grupoAberto) {
+            const banner = document.getElementById("groupBanner");
+            if (banner) {
+                banner.textContent =
+                    `Esta aula já tem ${formatarDuracao(response.grupoAberto.totalRecordedSeconds)} gravados de uma sessão ` +
+                    `anterior. Esta gravação vai continuar a partir daí — ao terminar, os pedaços serão unidos automaticamente.`;
+                banner.hidden = false;
+            }
+        }
 
         recording = true;
 
@@ -578,8 +587,20 @@ function mostrarModalDuracao(elapsedSeconds, expectedDurationSeconds) {
     btnContinuar.onclick = fechar;
 
     btnPararMesmoAssim.onclick = async () => {
-        fechar();
+        const restante = expectedDurationSeconds - elapsedSeconds;
+        texto.textContent =
+            `Ok, gravamos ${formatarDuracao(elapsedSeconds)} dessa aula e vamos guardar. ` +
+            `Grave essa aula de novo quando puder para completar os outros ~${formatarDuracao(restante)}.`;
+        btnContinuar.hidden = true;
+        btnPararMesmoAssim.hidden = true;
+
         await executarParada(true);
+
+        setTimeout(() => {
+            fechar();
+            btnContinuar.hidden = false;
+            btnPararMesmoAssim.hidden = false;
+        }, 2500);
     };
 }
 
@@ -735,6 +756,16 @@ function atualizarInterfaceGravando() {
 // ================================================================
 
 function atualizarInterfaceParado() {
+
+    const groupBanner =
+        document.getElementById(
+            "groupBanner"
+        );
+
+    if (groupBanner) {
+        groupBanner.hidden = true;
+        groupBanner.textContent = "";
+    }
 
     const button =
         document.getElementById(
