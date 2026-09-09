@@ -1562,6 +1562,11 @@ chrome.runtime.onMessage.addListener(
             "stop-recording"
         ) {
 
+            console.log(
+                "[A3-OS] background recebeu stop-recording, duracaoConfirmadaIncompleta =",
+                message.duracaoConfirmadaIncompleta
+            );
+
             (async () => {
 
                 try {

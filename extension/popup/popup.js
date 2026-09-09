@@ -584,9 +584,13 @@ function mostrarModalDuracao(elapsedSeconds, expectedDurationSeconds) {
 
     const fechar = () => { modal.hidden = true; };
 
-    btnContinuar.onclick = fechar;
+    btnContinuar.onclick = () => {
+        console.log("[A3-OS] clique em 'Continuar gravando'");
+        fechar();
+    };
 
     btnPararMesmoAssim.onclick = async () => {
+        console.log("[A3-OS] clique em 'Parar mesmo assim' — iniciando parada incompleta");
         const restante = expectedDurationSeconds - elapsedSeconds;
         texto.textContent =
             `Ok, gravamos ${formatarDuracao(elapsedSeconds)} dessa aula e vamos guardar. ` +
@@ -618,6 +622,11 @@ async function executarParada(duracaoConfirmadaIncompleta) {
         document.getElementById("statusText");
 
     try {
+
+        console.log(
+            "[A3-OS] enviando stop-recording ao background, duracaoConfirmadaIncompleta =",
+            duracaoConfirmadaIncompleta
+        );
 
         const response =
             await chrome.runtime.sendMessage({
