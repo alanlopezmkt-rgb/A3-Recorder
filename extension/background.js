@@ -1521,9 +1521,13 @@ chrome.runtime.onMessage.addListener(
 
             (async () => {
 
-                await salvarEstado({
-                    pendingIncompleteStop: !!message.duracaoConfirmadaIncompleta
-                });
+                try {
+                    await salvarEstado({
+                        pendingIncompleteStop: !!message.duracaoConfirmadaIncompleta
+                    });
+                } catch (error) {
+                    console.error("A3-OS: falha ao salvar pendingIncompleteStop, seguindo mesmo assim:", error);
+                }
 
                 const response = await pararGravacao();
                 sendResponse(response);
