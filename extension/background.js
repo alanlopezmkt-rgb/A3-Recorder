@@ -499,6 +499,100 @@ async function pararGravacao() {
 
 
 // ================================================================
+// RECONCILIACAO DE SESSAO ORFA (Chrome fechou no meio de uma
+// gravacao: o offscreen morreu sem passar por "Parar", mas os
+// chunks da sessao continuam no IndexedDB)
+// ================================================================
+
+async function reconciliarSessaoOrfa() {
+
+    try {
+
+        const estado = await carregarEstado();
+
+        if (!estado.recording) {
+            return;
+        }
+
+        const gravandoDeVerdade = await consultarOffscreenGravando();
+
+        if (gravandoDeVerdade) {
+            // Sessao genuinamente em andamento (SW so' reiniciou) -
+            // nada para reconciliar.
+            return;
+        }
+
+        const sessionId = estado.currentRecording && estado.currentRecording.sessionId;
+        const lessonKey = estado.currentRecording && estado.currentRecording.lessonKey;
+
+        if (!sessionId || !lessonKey) {
+            await salvarEstado({ recording: false });
+            return;
+        }
+
+        const chunks = await A3RecordingBackupDb.getChunksBySession(sessionId);
+
+        if (!chunks.length) {
+            // Nada foi salvo a tempo (interrupcao antes do primeiro
+            // tick de 30s) - nao ha' o que recuperar.
+            await salvarEstado({ recording: false });
+            return;
+        }
+
+        console.log(`A3-OS Recorder: recuperando sessão interrompida (${chunks.length} pedaço(s)).`);
+
+        const groups = await A3RecordingGroups.getGroups();
+        let group = groups[lessonKey];
+
+        if (!group) {
+            group = await A3RecordingGroups.createGroup(lessonKey, estado.currentRecording);
+        }
+
+        const segmentIndex = group.nextSegmentIndex;
+
+        const audioBlob = new Blob(chunks.map((c) => c.blob), { type: "audio/webm" });
+
+        const filenameBase = (estado.currentRecording.title || "aula")
+            .replace(/[<>:"/\\|?*#%]/g, "")
+            .replace(/\s+/g, " ")
+            .trim() || "aula";
+
+        const filename = `${filenameBase}_${Date.now()}.webm`;
+
+        await enviarParaSupabase({
+            title: estado.currentRecording.title,
+            moduleName: estado.currentRecording.moduleName,
+            filename,
+            audioBlob,
+            recordingGroupId: group.recordingGroupId,
+            segmentIndex,
+            isFinal: false
+        });
+
+        await A3RecordingGroups.advanceSegment(lessonKey);
+        await A3RecordingBackupDb.deleteChunksBySession(sessionId);
+
+        console.log("A3-OS Recorder: segmento recuperado e enviado com sucesso.");
+
+    } catch (error) {
+
+        // Falha aqui (sem internet, sessao expirada) nao apaga nada -
+        // os chunks continuam no IndexedDB e a proxima reconciliacao
+        // (proximo boot) tenta de novo.
+        console.error("A3-OS Recorder: falha na reconciliação de sessão órfã:", error);
+
+    } finally {
+
+        await salvarEstado({ recording: false });
+        chrome.action.setIcon({ path: ICON_NORMAL });
+    }
+}
+
+chrome.runtime.onStartup.addListener(reconciliarSessaoOrfa);
+reconciliarSessaoOrfa();
+
+
+// ================================================================
 // NATIVE HOST
 // ================================================================
 
