@@ -41,14 +41,25 @@ async function enviarHeartbeat() {
     }
 }
 
+const GROUP_EXPIRY_ALARM = "a3os-group-expiry-sweep";
+const GROUP_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
 chrome.alarms.create(HEARTBEAT_ALARM, {
     periodInMinutes: HEARTBEAT_INTERVAL_MINUTES
+});
+
+chrome.alarms.create(GROUP_EXPIRY_ALARM, {
+    periodInMinutes: 24 * 60 // uma vez por dia
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
 
     if (alarm.name === HEARTBEAT_ALARM) {
         enviarHeartbeat();
+    }
+
+    if (alarm.name === GROUP_EXPIRY_ALARM) {
+        varrerGruposExpirados();
     }
 });
 
@@ -591,6 +602,73 @@ async function reconciliarSessaoOrfa() {
 chrome.runtime.onStartup.addListener(reconciliarSessaoOrfa);
 reconciliarSessaoOrfa();
 
+// ================================================================
+// VARREDURA DE GRUPOS EXPIRADOS (aula interrompida ha' mais de 7
+// dias sem retomada - fecha o grupo automaticamente, marcando o
+// ultimo segmento enviado como final para nao deixar a transcricao
+// pendente para sempre)
+// ================================================================
+
+async function varrerGruposExpirados() {
+
+    try {
+
+        const expirados = await A3RecordingGroups.listExpiredGroups(GROUP_EXPIRY_MS);
+
+        for (const grupo of expirados) {
+
+            try {
+
+                const token = await A3Session.getValidAccessToken();
+
+                if (!token) {
+                    continue;
+                }
+
+                const segmentos = await A3Supabase.restSelect(
+                    "audio_files",
+                    `select=id&recording_group_id=eq.${grupo.recordingGroupId}&order=segment_index.desc&limit=1`,
+                    token
+                );
+
+                const ultimoSegmento = segmentos[0];
+
+                if (ultimoSegmento) {
+
+                    await A3Supabase.restUpdate(
+                        "audio_files",
+                        `id=eq.${ultimoSegmento.id}`,
+                        { is_final: true },
+                        token
+                    );
+
+                    await A3Supabase.restInsert(
+                        "transcription_jobs",
+                        {
+                            audio_file_id: ultimoSegmento.id,
+                            status: "pending"
+                        },
+                        token
+                    );
+
+                    console.log(`A3-OS Recorder: grupo expirado (${grupo.lessonKey}) fechado automaticamente após 7 dias.`);
+                }
+
+                await A3RecordingGroups.closeGroup(grupo.lessonKey);
+
+            } catch (error) {
+
+                console.error(`A3-OS Recorder: falha ao expirar grupo ${grupo.lessonKey}:`, error);
+                // Nao fecha o grupo localmente se a atualizacao no Supabase
+                // falhou - tenta de novo na proxima varredura diaria.
+            }
+        }
+
+    } catch (error) {
+
+        console.error("A3-OS Recorder: falha na varredura de grupos expirados:", error);
+    }
+}
 
 // ================================================================
 // NATIVE HOST
