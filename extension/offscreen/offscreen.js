@@ -7,6 +7,10 @@ let audioSource = null;
 
 let recordingTitle = "aula";
 
+let recordingLessonKey = null;
+let recordingSessionId = null;
+let chunkSeq = 0;
+
 
 // ================================================================
 // MENSAGENS
@@ -36,7 +40,11 @@ chrome.runtime.onMessage.addListener(
 
                 message.streamId,
 
-                message.title
+                message.title,
+
+                message.lessonKey,
+
+                message.sessionId
 
             )
             .then(
@@ -117,6 +125,23 @@ chrome.runtime.onMessage.addListener(
 
             return true;
         }
+
+
+        if (
+            message.target ===
+            "offscreen" &&
+
+            message.action ===
+            "delete-backup-chunks"
+        ) {
+
+            A3RecordingBackupDb
+                .deleteChunksBySession(message.sessionId)
+                .then(() => sendResponse({ success: true }))
+                .catch((error) => sendResponse({ success: false, error: error.message }));
+
+            return true;
+        }
     }
 );
 
@@ -127,7 +152,9 @@ chrome.runtime.onMessage.addListener(
 
 async function iniciarGravacao(
     streamId,
-    title
+    title,
+    lessonKey,
+    sessionId
 ) {
 
     if (
@@ -143,6 +170,17 @@ async function iniciarGravacao(
     recordingTitle =
         title ||
         "aula";
+
+    recordingLessonKey =
+        lessonKey ||
+        null;
+
+    recordingSessionId =
+        sessionId ||
+        null;
+
+    chunkSeq =
+        0;
 
 
     audioChunks = [];
@@ -261,6 +299,26 @@ async function iniciarGravacao(
                 audioChunks.push(
                     event.data
                 );
+
+                if (recordingSessionId) {
+
+                    const seq = chunkSeq;
+                    chunkSeq += 1;
+
+                    A3RecordingBackupDb
+                        .addChunk({
+                            lessonKey: recordingLessonKey,
+                            sessionId: recordingSessionId,
+                            seq,
+                            blob: event.data
+                        })
+                        .catch((error) => {
+                            // Camada 1 e' um bonus, nao uma dependencia: se o
+                            // IndexedDB falhar (quota, navegador privado etc.),
+                            // a gravacao em memoria continua normalmente.
+                            console.warn("A3-OS: falha ao gravar backup local do pedaço:", error);
+                        });
+                }
             }
         };
 
@@ -294,7 +352,7 @@ async function iniciarGravacao(
     // COMEÇAR
     // ============================================================
 
-    mediaRecorder.start(1000);
+    mediaRecorder.start(30000);
 
 
     console.log(
@@ -480,7 +538,10 @@ async function finalizarGravacao() {
                 filename,
 
             chunks:
-                chunks
+                chunks,
+
+            sessionId:
+                recordingSessionId
         });
 
 
@@ -550,5 +611,11 @@ async function finalizarGravacao() {
         mediaRecorder = null;
 
         audioChunks = [];
+
+        recordingLessonKey = null;
+
+        recordingSessionId = null;
+
+        chunkSeq = 0;
     }
 }
