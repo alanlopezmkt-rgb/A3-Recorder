@@ -707,8 +707,20 @@ async function reconciliarSessaoOrfa() {
                 // Interrupcao abrupta no meio de uma gravacao - sobe
                 // como segmento comum (nao final) do grupo.
 
+                // A duracao exata do segmento recuperado e' desconhecida
+                // (o IndexedDB so' guarda os blobs), mas o MediaRecorder
+                // grava com timeslice de 30s (offscreen.js, mediaRecorder.
+                // start(30000)), entao chunks.length * 30 e' uma
+                // aproximacao aceitavel so' para informar ao usuario
+                // quantos minutos foram capturados (nunca usada para a
+                // decisao de isFinal).
+                const duracaoAproximadaSegundos = chunks.length * 30;
+
                 if (!group) {
-                    group = await A3RecordingGroups.createGroup(marcador.lessonKey, marcador);
+                    group = await A3RecordingGroups.createGroup(marcador.lessonKey, {
+                        ...marcador,
+                        segmentDurationSeconds: duracaoAproximadaSegundos
+                    });
                 }
 
                 await enviarParaSupabase({
@@ -721,7 +733,7 @@ async function reconciliarSessaoOrfa() {
                     isFinal: false
                 });
 
-                await A3RecordingGroups.advanceSegment(marcador.lessonKey);
+                await A3RecordingGroups.advanceSegment(marcador.lessonKey, duracaoAproximadaSegundos);
             }
 
             await A3RecordingBackupDb.deleteChunksBySession(marcador.sessionId);
@@ -1200,6 +1212,77 @@ async function resolverCursoModulo(title, token, moduleName) {
 
 
 // ================================================================
+// DURACAO ESPERADA DA AULA (so'-leitura, sem efeitos colaterais -
+// reaproveita o mesmo parsing de titulo de resolverCursoModulo, mas
+// so' com SELECTs, para nunca criar curso/modulo/aula so' para
+// consultar a duracao esperada)
+// ================================================================
+
+async function buscarDuracaoEsperada(title, moduleName, token) {
+
+    const tituloBruto = (title || "aula").trim();
+    const match = tituloBruto.match(/^\s*(\d+)\s*-\s*(.+?)\s*-\s*(.+?)\s*$/);
+    const courseName = match ? match[2] : "Aulas sem curso identificado";
+    let lessonNumber = match ? parseInt(match[1], 10) : null;
+    const moduleNameLimpo = (moduleName || "").trim();
+
+    if (lessonNumber === null || !moduleNameLimpo) {
+        // Sem número de aula detectável no título, ou sem nome de módulo:
+        // não dá pra resolver a linha certa de "lessons" com segurança.
+        return null;
+    }
+
+    let mod = (
+        await A3Supabase.restSelect(
+            "modules",
+            `select=id,course_id&name=eq.${encodeURIComponent(moduleNameLimpo)}&limit=1`,
+            token
+        )
+    )[0];
+
+    if (!mod) {
+        const course = (
+            await A3Supabase.restSelect(
+                "courses",
+                `select=id&name=eq.${encodeURIComponent(courseName)}`,
+                token
+            )
+        )[0];
+
+        if (!course) {
+            return null;
+        }
+
+        mod = (
+            await A3Supabase.restSelect(
+                "modules",
+                `select=id&course_id=eq.${course.id}&name=eq.${encodeURIComponent(moduleNameLimpo)}`,
+                token
+            )
+        )[0];
+    }
+
+    if (!mod) {
+        return null;
+    }
+
+    const aula = (
+        await A3Supabase.restSelect(
+            "lessons",
+            `select=expected_duration_seconds&module_id=eq.${mod.id}&lesson_number=eq.${lessonNumber}`,
+            token
+        )
+    )[0];
+
+    if (!aula || !aula.expected_duration_seconds) {
+        return null;
+    }
+
+    return { expectedDurationSeconds: aula.expected_duration_seconds };
+}
+
+
+// ================================================================
 // UPLOAD PARA O SUPABASE (compartilhado entre o fluxo normal de
 // "Parar" e a reconciliação de sessões interrompidas)
 // ================================================================
@@ -1428,6 +1511,33 @@ chrome.runtime.onMessage.addListener(
                     }
                 );
 
+
+            return true;
+        }
+
+
+        // ========================================================
+        // DURACAO ESPERADA (consulta so'-leitura, usada pelo popup)
+        // ========================================================
+
+        if (message.action === "get-expected-duration") {
+
+            (async () => {
+                try {
+                    const token = await A3Session.getValidAccessToken();
+                    if (!token) {
+                        sendResponse({ expectedDurationSeconds: null });
+                        return;
+                    }
+                    const resultado = await buscarDuracaoEsperada(
+                        message.title, message.moduleName, token
+                    );
+                    sendResponse(resultado || { expectedDurationSeconds: null });
+                } catch (error) {
+                    console.error("A3-OS Recorder: falha ao buscar duração esperada:", error);
+                    sendResponse({ expectedDurationSeconds: null });
+                }
+            })();
 
             return true;
         }

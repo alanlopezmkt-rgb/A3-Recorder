@@ -24,20 +24,22 @@ async function createGroup(lessonKey, meta) {
         lastActivityAt: new Date().toISOString(),
         title: meta.title || "aula",
         outputFolder: meta.outputFolder || "",
-        moduleName: meta.moduleName || null
+        moduleName: meta.moduleName || null,
+        totalRecordedSeconds: meta.segmentDurationSeconds || 0
     };
     groups[lessonKey] = group;
     await saveGroups(groups);
     return group;
 }
 
-async function advanceSegment(lessonKey) {
+async function advanceSegment(lessonKey, segmentDurationSeconds) {
     const groups = await getGroups();
     const group = groups[lessonKey];
     if (!group) {
         return;
     }
     group.nextSegmentIndex += 1;
+    group.totalRecordedSeconds = (group.totalRecordedSeconds || 0) + (segmentDurationSeconds || 0);
     group.lastActivityAt = new Date().toISOString();
     await saveGroups(groups);
 }
