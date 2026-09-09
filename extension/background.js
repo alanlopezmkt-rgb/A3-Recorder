@@ -292,6 +292,9 @@ async function iniciarGravacao(
         }
 
 
+        const lessonKey = A3LessonKey.lessonKey(title, moduleName);
+        const sessionId = crypto.randomUUID();
+
         await salvarEstado({
 
             currentRecording: {
@@ -305,7 +308,13 @@ async function iniciarGravacao(
 
                 moduleName:
                     moduleName ||
-                    null
+                    null,
+
+                lessonKey:
+                    lessonKey,
+
+                sessionId:
+                    sessionId
             }
         });
 
@@ -339,7 +348,13 @@ async function iniciarGravacao(
                     streamId,
 
                 title:
-                    currentRecording.title
+                    currentRecording.title,
+
+                lessonKey:
+                    currentRecording.lessonKey,
+
+                sessionId:
+                    currentRecording.sessionId
             });
 
 
@@ -871,6 +886,98 @@ async function resolverCursoModulo(title, token, moduleName) {
 
 
 // ================================================================
+// UPLOAD PARA O SUPABASE (compartilhado entre o fluxo normal de
+// "Parar" e a reconciliação de sessões interrompidas)
+// ================================================================
+
+async function enviarParaSupabase({
+    title,
+    moduleName,
+    filename,
+    audioBlob,
+    recordingGroupId,
+    segmentIndex,
+    isFinal
+}) {
+
+    const token = await A3Session.getValidAccessToken();
+    const user = await A3Session.getCurrentUser();
+
+    if (!token || !user) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    const selection = await resolverCursoModulo(title, token, moduleName);
+
+    const lessonRow = await A3Supabase.restInsert(
+        "lessons",
+        {
+            module_id: selection.moduleId,
+            lesson_number: selection.lessonNumber,
+            title: selection.lessonTitle
+        },
+        token
+    ).catch(async () => {
+        const existing = await A3Supabase.restSelect(
+            "lessons",
+            `select=id&module_id=eq.${selection.moduleId}&lesson_number=eq.${selection.lessonNumber}`,
+            token
+        );
+        return existing[0];
+    });
+
+    // O Supabase Storage rejeita chaves com espaco/acento mesmo
+    // com URL-encoding (valida a chave decodificada). O nome
+    // original (com espacos/acentos) continua guardado em
+    // audio_files.filename para exibicao.
+    const nomeStorageSeguro = filename
+        .normalize("NFD")
+        .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+        .replace(/[^A-Za-z0-9._-]/g, "_");
+
+    const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${nomeStorageSeguro}`;
+
+    await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
+
+    const audioFileRow = await A3Supabase.restInsert(
+        "audio_files",
+        {
+            course_id: selection.courseId,
+            module_id: selection.moduleId,
+            lesson_id: lessonRow.id,
+            uploaded_by: user.id,
+            storage_path: storagePath,
+            filename: filename,
+            mime_type: "audio/webm",
+            file_size: audioBlob.size,
+            status: "uploaded",
+            recording_group_id: recordingGroupId,
+            segment_index: segmentIndex,
+            is_final: isFinal
+        },
+        token
+    );
+
+    // Segmentos intermediários de um grupo (is_final: false) não geram
+    // job de transcrição sozinhos — a junção (Task 10, supabase_worker.py)
+    // só roda quando o segmento final sobe, e o job criado ali cobre o
+    // grupo inteiro.
+    if (isFinal) {
+        await A3Supabase.restInsert(
+            "transcription_jobs",
+            {
+                audio_file_id: audioFileRow.id,
+                status: "pending"
+            },
+            token
+        );
+    }
+
+    return audioFileRow;
+}
+
+
+// ================================================================
 // MENSAGENS
 // ================================================================
 
@@ -1063,35 +1170,9 @@ chrome.runtime.onMessage.addListener(
                             stage: "uploading"
                         });
 
-                        const token = await A3Session.getValidAccessToken();
-                        const user = await A3Session.getCurrentUser();
-
-                        if (!token || !user) {
-                            throw new Error("Sessão expirada. Faça login novamente.");
-                        }
-
-                        const selection = await resolverCursoModulo(
-                            currentRecording.title,
-                            token,
-                            currentRecording.moduleName
-                        );
-
-                        const lessonRow = await A3Supabase.restInsert(
-                            "lessons",
-                            {
-                                module_id: selection.moduleId,
-                                lesson_number: selection.lessonNumber,
-                                title: selection.lessonTitle
-                            },
-                            token
-                        ).catch(async () => {
-                            const existing = await A3Supabase.restSelect(
-                                "lessons",
-                                `select=id&module_id=eq.${selection.moduleId}&lesson_number=eq.${selection.lessonNumber}`,
-                                token
-                            );
-                            return existing[0];
-                        });
+                        const lessonKey = currentRecording.lessonKey || null;
+                        const groups = lessonKey ? await A3RecordingGroups.getGroups() : {};
+                        const existingGroup = lessonKey ? groups[lessonKey] : null;
 
                         // message.chunks são strings base64 (contrato com o Native Host, NÃO alterar
                         // o que é passado para salvarAudioNative). Para o upload ao Supabase, os
@@ -1108,43 +1189,27 @@ chrome.runtime.onMessage.addListener(
 
                         const audioBlob = new Blob(audioByteArrays, { type: "audio/webm" });
 
-                        // O Supabase Storage rejeita chaves com espaco/acento mesmo
-                        // com URL-encoding (valida a chave decodificada). O nome
-                        // original (com espacos/acentos) continua guardado em
-                        // audio_files.filename para exibicao.
-                        const nomeStorageSeguro = message.filename
-                            .normalize("NFD")
-                            .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
-                            .replace(/[^A-Za-z0-9._-]/g, "_");
+                        await enviarParaSupabase({
+                            title: currentRecording.title,
+                            moduleName: currentRecording.moduleName,
+                            filename: message.filename,
+                            audioBlob,
+                            recordingGroupId: existingGroup ? existingGroup.recordingGroupId : null,
+                            segmentIndex: existingGroup ? existingGroup.nextSegmentIndex : null,
+                            isFinal: true
+                        });
 
-                        const storagePath = `${selection.courseId}/${selection.moduleId}/${lessonRow.id}/${nomeStorageSeguro}`;
+                        if (existingGroup) {
+                            await A3RecordingGroups.closeGroup(lessonKey);
+                        }
 
-                        await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
-
-                        const audioFileRow = await A3Supabase.restInsert(
-                            "audio_files",
-                            {
-                                course_id: selection.courseId,
-                                module_id: selection.moduleId,
-                                lesson_id: lessonRow.id,
-                                uploaded_by: user.id,
-                                storage_path: storagePath,
-                                filename: message.filename,
-                                mime_type: "audio/webm",
-                                file_size: audioBlob.size,
-                                status: "uploaded"
-                            },
-                            token
-                        );
-
-                        await A3Supabase.restInsert(
-                            "transcription_jobs",
-                            {
-                                audio_file_id: audioFileRow.id,
-                                status: "pending"
-                            },
-                            token
-                        );
+                        if (message.sessionId) {
+                            chrome.runtime.sendMessage({
+                                target: "offscreen",
+                                action: "delete-backup-chunks",
+                                sessionId: message.sessionId
+                            });
+                        }
 
                         chrome.runtime.sendMessage({
                             action: "upload-status",
