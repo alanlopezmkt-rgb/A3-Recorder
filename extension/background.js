@@ -2009,11 +2009,33 @@ chrome.runtime.onMessage.addListener(
 
                     const history = await A3Supabase.restSelect(
                         "audio_files",
-                        `select=id,filename,created_at,status,duration,duracao_suspeita,duracao_tipo,duracao_esperada_segundos,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}${filtroData}&order=created_at.desc&limit=${limite}`,
+                        `select=id,filename,created_at,status,duration,duracao_suspeita,duracao_tipo,duracao_esperada_segundos,lesson_id,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}${filtroData}&order=created_at.desc&limit=${limite}`,
                         token
                     );
 
-                    sendResponse({ history });
+                    // Uma gravação incompleta ("Parar mesmo assim") sobe um
+                    // segmento por tentativa antes do merge final — sem isso,
+                    // cada tentativa vira uma linha própria no histórico, dando
+                    // a impressão de várias aulas enviadas quando é só uma,
+                    // ainda em andamento. Mantém apenas o envio mais recente de
+                    // cada aula (a lista já vem ordenada por created_at desc) e
+                    // esconde segmentos já incorporados a um envio final
+                    // (status "merged").
+                    const aulasVistas = new Set();
+                    const historyDedupPorAula = [];
+                    for (const item of history) {
+                        if (item.status === "merged") {
+                            continue;
+                        }
+                        const chaveAula = item.lesson_id || item.id;
+                        if (aulasVistas.has(chaveAula)) {
+                            continue;
+                        }
+                        aulasVistas.add(chaveAula);
+                        historyDedupPorAula.push(item);
+                    }
+
+                    sendResponse({ history: historyDedupPorAula });
 
                 } catch (error) {
 
