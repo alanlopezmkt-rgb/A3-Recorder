@@ -330,6 +330,17 @@ body {
     color: var(--text-secondary, inherit);
 }
 
+.info-banner:has(.icone-aviso) {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.info-banner .icone-aviso {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
 .info-banner.info-banner-warning {
     background: var(--status-recording-bg);
     border-color: var(--status-recording-border);
@@ -1030,9 +1041,18 @@ body {
     border: 1px solid var(--status-recording-border);
     border-radius: var(--radius);
 
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+
     font-size: 10.5px;
     line-height: 1.4;
     color: var(--status-recording-text);
+}
+
+.history-item-warning .icone-aviso {
+    flex-shrink: 0;
+    margin-top: 1px;
 }
 
 .history-item-warning-longa {

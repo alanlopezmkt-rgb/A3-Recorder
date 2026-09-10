@@ -97,6 +97,16 @@ const ICON_RECORDING = {
     "128": "icons/icon-recording-128.png"
 };
 
+// Mostrado na aba (setIcon com tabId) quando essa aba tem uma aula com
+// gravacao incompleta (grupo aberto) — chama atencao antes mesmo de abrir
+// o popup. So se aplica aquela aba especifica, nunca o icone global.
+const ICON_WARNING = {
+
+    "16": "icons/icon-warning-16.png",
+    "48": "icons/icon-warning-48.png",
+    "128": "icons/icon-warning-128.png"
+};
+
 
 // ================================================================
 // FORMATACAO DE DURACAO PARA NOTIFICACOES
@@ -1605,6 +1615,29 @@ chrome.runtime.onMessage.addListener(
 
                     const groups = await A3RecordingGroups.getGroups();
                     const grupoAberto = groups[lessonKey] || null;
+
+                    // Troca o icone da extensao SO na aba atual (a aula
+                    // detectada e' sempre da aba ativa que abriu o popup)
+                    // pra avisar de longe que aquela aula ficou incompleta.
+                    try {
+
+                        const [abaAtiva] = await chrome.tabs.query({
+                            active: true,
+                            currentWindow: true
+                        });
+
+                        if (abaAtiva?.id !== undefined) {
+
+                            chrome.action.setIcon({
+                                tabId: abaAtiva.id,
+                                path: grupoAberto ? ICON_WARNING : ICON_NORMAL
+                            });
+                        }
+
+                    } catch (erroIcone) {
+
+                        console.error("A3-OS: falha ao atualizar icone da aba para aviso de aula incompleta:", erroIcone);
+                    }
 
                     sendResponse({
                         grupoAberto: grupoAberto
