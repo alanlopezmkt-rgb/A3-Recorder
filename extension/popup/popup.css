@@ -1061,6 +1061,36 @@ body {
     color: #d97706;
 }
 
+.history-item-incompleta {
+    border-color: var(--status-recording-border);
+}
+
+.history-progress {
+    margin-top: 8px;
+    height: 6px;
+
+    background: var(--status-recording-bg);
+    border: 1px solid var(--status-recording-border);
+    border-radius: 999px;
+
+    overflow: hidden;
+}
+
+.history-progress-bar {
+    height: 100%;
+    background: var(--accent-red);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+}
+
+.history-progress-label {
+    margin-top: 4px;
+
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--status-recording-text);
+}
+
 .update-field {
     margin-top: 4px;
 }

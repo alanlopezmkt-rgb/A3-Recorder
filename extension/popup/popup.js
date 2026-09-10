@@ -1088,7 +1088,28 @@ async function carregarHistorico() {
 
         const history = response?.history || [];
 
-        if (history.length === 0) {
+        // Gravações incompletas em andamento não têm linha em audio_files
+        // (Opção B) — não aparecem em `history`. Buscamos os grupos abertos
+        // à parte e mostramos no topo, com barra de progresso e a minutagem
+        // pra continuar. Só no modo "Tudo" (é trabalho pendente atual, não
+        // faz sentido filtrar por data passada).
+        let gruposHtml = "";
+
+        if (historyFiltroAtual.modo === "all") {
+            try {
+                const gruposResp = await chrome.runtime.sendMessage({
+                    action: "list-grupos-abertos"
+                });
+                gruposHtml = (gruposResp?.grupos || [])
+                    .sort((a, b) => new Date(b.lastActivityAt || 0) - new Date(a.lastActivityAt || 0))
+                    .map(renderGrupoIncompletoItem)
+                    .join("");
+            } catch (erroGrupos) {
+                console.error("Erro ao carregar gravações incompletas:", erroGrupos);
+            }
+        }
+
+        if (history.length === 0 && !gruposHtml) {
 
             const mensagem = intervalo
                 ? "Nenhuma aula enviada nesse período."
@@ -1099,7 +1120,7 @@ async function carregarHistorico() {
             return;
         }
 
-        listElement.innerHTML = history
+        listElement.innerHTML = gruposHtml + history
             .map(renderHistoryItem)
             .join("");
 
@@ -1155,6 +1176,43 @@ function renderHistoryItem(item) {
             </div>
             ${avisoSuspeita}
             ${avisoIncompleta}
+        </div>
+    `;
+}
+
+// Item do histórico para uma gravação incompleta ainda em aberto
+// (grupo no chrome.storage, sem linha em audio_files). Mostra barra de
+// progresso (gravado / duração esperada) e a minutagem pra continuar.
+function renderGrupoIncompletoItem(grupo) {
+
+    const titulo = grupo.title || "Aula";
+    const meta = grupo.moduleName || "";
+
+    const gravado = grupo.totalRecordedSeconds || 0;
+    const esperado = grupo.expectedDurationSeconds || 0;
+
+    const pct = esperado
+        ? Math.min(100, Math.max(0, Math.round((gravado / esperado) * 100)))
+        : null;
+
+    const barra = pct === null
+        ? `<div class="history-progress-label">Gravado até ${formatarTimestamp(gravado)}</div>`
+        : `
+            <div class="history-progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+                <div class="history-progress-bar" style="width: ${pct}%"></div>
+            </div>
+            <div class="history-progress-label">${pct}% da aula — gravado até ${formatarTimestamp(gravado)} de ${formatarTimestamp(esperado)}</div>`;
+
+    return `
+        <div class="history-item history-item-incompleta">
+            <div class="history-item-title">${escapeHtml(titulo)}</div>
+            ${meta ? `<div class="history-item-meta">${escapeHtml(meta)}</div>` : ""}
+            <div class="history-item-date">
+                <span>Gravação em andamento</span>
+                <span class="history-item-status status-incompleta">Gravação incompleta</span>
+            </div>
+            <div class="history-item-warning">${ICONE_AVISO_SVG}<span>Ainda não foi pro banco. Grave esta aula de novo a partir de ${formatarTimestamp(gravado)} — quando você terminar, os pedaços são unidos automaticamente e só aí a aula entra no banco.</span></div>
+            ${barra}
         </div>
     `;
 }

@@ -180,6 +180,16 @@ async function atualizarIconeDaAba(tabId) {
 
     try {
 
+        // Nunca sobrepor o icone de gravacao em andamento. Este metodo
+        // roda em eventos de aba e num alarme de 30s; sem esta guarda ele
+        // trocava o icone vermelho de "gravando" por ICON_NORMAL/WARNING
+        // no meio da gravacao.
+        const estado = await carregarEstado();
+        if (estado.recording) {
+            chrome.action.setIcon({ tabId, path: ICON_RECORDING });
+            return;
+        }
+
         const deteccao = await detectarAulaNaAba(tabId);
 
         if (!deteccao || !deteccao.title) {
@@ -1887,6 +1897,63 @@ chrome.runtime.onMessage.addListener(
 
 
         // ========================================================
+        // GRUPOS ABERTOS (todos) — o popup mostra cada gravacao
+        // incompleta no historico com barra de progresso, mesmo sem
+        // linha em audio_files (Opcao B). Enriquece com a duracao
+        // esperada da aula pra calcular a porcentagem.
+        // ========================================================
+
+        if (message.action === "list-grupos-abertos") {
+
+            (async () => {
+
+                try {
+
+                    const groups = await A3RecordingGroups.getGroups();
+                    const token = await A3Session.getValidAccessToken().catch(() => null);
+
+                    const lista = [];
+
+                    for (const [lessonKey, grupo] of Object.entries(groups)) {
+
+                        let expectedDurationSeconds = null;
+
+                        if (token) {
+                            try {
+                                const r = await buscarDuracaoEsperada(
+                                    grupo.title, grupo.moduleName, token
+                                );
+                                expectedDurationSeconds = r ? r.expectedDurationSeconds : null;
+                            } catch (e) {
+                                // sem duracao esperada — a barra fica sem porcentagem
+                            }
+                        }
+
+                        lista.push({
+                            lessonKey,
+                            title: grupo.title,
+                            moduleName: grupo.moduleName,
+                            totalRecordedSeconds: grupo.totalRecordedSeconds || 0,
+                            lastActivityAt: grupo.lastActivityAt || null,
+                            expectedDurationSeconds
+                        });
+                    }
+
+                    sendResponse({ grupos: lista });
+
+                } catch (error) {
+
+                    console.error("A3-OS: falha ao listar grupos abertos:", error);
+                    sendResponse({ grupos: [], error: error.message });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
         // DURACAO ESPERADA (consulta so'-leitura, usada pelo popup)
         // ========================================================
 
@@ -2327,6 +2394,14 @@ chrome.runtime.onMessage.addListener(
                     const historyDedupPorAula = [];
                     for (const item of history) {
                         if (item.status === "merged") {
+                            continue;
+                        }
+                        // Sob a Opção B nenhuma gravação incompleta cria linha
+                        // em audio_files — as que ainda estão abertas aparecem
+                        // como item sintético (grupo do chrome.storage) com
+                        // barra de progresso. Linhas is_final=false que sobraram
+                        // do modelo antigo são escondidas aqui pra não duplicar.
+                        if (item.is_final === false) {
                             continue;
                         }
                         const chaveAula = item.lesson_id || item.id;
