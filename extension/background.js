@@ -898,6 +898,7 @@ async function reconciliarSessaoOrfa() {
                 // quantos minutos foram capturados (nunca usada para a
                 // decisao de isFinal).
                 const duracaoAproximadaSegundos = chunks.length * 30;
+                const grupoJaExistia = !!group;
 
                 if (!group) {
                     group = await A3RecordingGroups.createGroup(marcador.lessonKey, {
@@ -906,17 +907,36 @@ async function reconciliarSessaoOrfa() {
                     });
                 }
 
+                const segmentIndexParaEnvio = group.nextSegmentIndex;
+
+                // Total gravado ate' agora (pra "duration" do audio_files e
+                // pro aviso de aula incompleta). Grupo recem-criado ja'
+                // nasce com totalRecordedSeconds = esse primeiro segmento;
+                // grupo existente ainda nao inclui esse segmento (o
+                // advanceSegment que soma roda so' depois do upload).
+                const totalGravadoAteAgora = grupoJaExistia
+                    ? group.totalRecordedSeconds + duracaoAproximadaSegundos
+                    : group.totalRecordedSeconds;
+
                 await enviarParaSupabase({
                     title: marcador.title,
                     moduleName: marcador.moduleName,
                     filename,
                     audioBlob,
                     recordingGroupId: group.recordingGroupId,
-                    segmentIndex: group.nextSegmentIndex,
-                    isFinal: false
+                    segmentIndex: segmentIndexParaEnvio,
+                    isFinal: false,
+                    durationSeconds: totalGravadoAteAgora
                 });
 
-                await A3RecordingGroups.advanceSegment(marcador.lessonKey, duracaoAproximadaSegundos);
+                // Avanca o indice do proximo segmento sempre; so' soma a
+                // duracao de novo quando o grupo ja existia (um grupo
+                // recem-criado ja nasce com a duracao desse primeiro
+                // segmento contabilizada, somar de novo dobraria o total).
+                await A3RecordingGroups.advanceSegment(
+                    marcador.lessonKey,
+                    grupoJaExistia ? duracaoAproximadaSegundos : 0
+                );
 
                 try {
 
@@ -1498,7 +1518,8 @@ async function enviarParaSupabase({
     audioBlob,
     recordingGroupId,
     segmentIndex,
-    isFinal
+    isFinal,
+    durationSeconds
 }) {
 
     const token = await A3Session.getValidAccessToken();
@@ -1554,7 +1575,14 @@ async function enviarParaSupabase({
             status: "uploaded",
             recording_group_id: recordingGroupId,
             segment_index: segmentIndex,
-            is_final: isFinal
+            is_final: isFinal,
+            // Segmento nao-final nunca gera transcription_job (ver
+            // abaixo), entao nunca passa pelo supabase_worker.py que
+            // detecta a duracao real do audio — sem isso, "duration"
+            // fica nulo pra sempre e o aviso de aula incompleta mostra
+            // "0:00" gravados. Pro segmento final, quem preenche a
+            // duracao real (a partir do arquivo) e' o worker mesmo.
+            ...(isFinal ? {} : { duration: durationSeconds ?? null })
         },
         token
     );
@@ -1960,8 +1988,18 @@ chrome.runtime.onMessage.addListener(
                                     audioBlob,
                                     recordingGroupId: grupo.recordingGroupId,
                                     segmentIndex: grupo.nextSegmentIndex,
-                                    isFinal: false
+                                    isFinal: false,
+                                    // Grupo recem-criado ja' nasce com
+                                    // totalRecordedSeconds = esse primeiro
+                                    // segmento.
+                                    durationSeconds: grupo.totalRecordedSeconds
                                 });
+
+                                // So' avanca o indice do proximo segmento —
+                                // a duracao desse primeiro segmento ja foi
+                                // contabilizada na criacao do grupo, somar
+                                // de novo aqui dobraria o total.
+                                await A3RecordingGroups.advanceSegment(lessonKey, 0);
 
                             } else {
 
@@ -1972,7 +2010,8 @@ chrome.runtime.onMessage.addListener(
                                     audioBlob,
                                     recordingGroupId: existingGroup.recordingGroupId,
                                     segmentIndex: existingGroup.nextSegmentIndex,
-                                    isFinal: false
+                                    isFinal: false,
+                                    durationSeconds: existingGroup.totalRecordedSeconds + duracaoSegmentoSegundos
                                 });
 
                                 await A3RecordingGroups.advanceSegment(lessonKey, duracaoSegmentoSegundos);
