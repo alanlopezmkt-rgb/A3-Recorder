@@ -16,7 +16,7 @@ global.crypto = { randomUUID: () => 'test-uuid' };
 global.self = global;
 
 require('../lib/recording-groups.js');
-const { createGroup, advanceSegment, closeGroup } = self.A3RecordingGroups;
+const { createGroup, addSegmentPath, bumpSegmentIndex, closeGroup } = self.A3RecordingGroups;
 
 beforeEach(() => { storage = {}; });
 
@@ -25,14 +25,32 @@ test('createGroup inicializa totalRecordedSeconds com o primeiro segmento', asyn
     assert.strictEqual(group.totalRecordedSeconds, 90);
 });
 
-test('advanceSegment acumula duração em múltiplas chamadas', async () => {
-    await createGroup('aula-1', { title: 'Aula 1', segmentDurationSeconds: 90 });
-    await advanceSegment('aula-1', 60);
-    await advanceSegment('aula-1', 30);
+test('createGroup guarda o primeiro caminho de trecho quando informado', async () => {
+    const group = await createGroup('aula-1', {
+        title: 'Aula 1',
+        segmentDurationSeconds: 90,
+        segmentPath: 'curso/mod/aula/trecho-1.webm'
+    });
+    assert.deepStrictEqual(group.segmentPaths, ['curso/mod/aula/trecho-1.webm']);
+});
+
+test('addSegmentPath acumula duração, índice e caminhos em múltiplas chamadas', async () => {
+    await createGroup('aula-1', {
+        title: 'Aula 1',
+        segmentDurationSeconds: 90,
+        segmentPath: 'p/trecho-1.webm'
+    });
+    await addSegmentPath('aula-1', 'p/trecho-2.webm', 60);
+    await addSegmentPath('aula-1', 'p/trecho-3.webm', 30);
 
     const groups = await self.A3RecordingGroups.getGroups();
     assert.strictEqual(groups['aula-1'].totalRecordedSeconds, 180);
     assert.strictEqual(groups['aula-1'].nextSegmentIndex, 2);
+    assert.deepStrictEqual(groups['aula-1'].segmentPaths, [
+        'p/trecho-1.webm',
+        'p/trecho-2.webm',
+        'p/trecho-3.webm'
+    ]);
 });
 
 // Cobertura da Task 6: caminho tomado por background.js quando o usuário
@@ -47,19 +65,30 @@ test('primeira parada incompleta de uma aula cria o grupo (sem existingGroup)', 
         title: 'Aula 2',
         outputFolder: 'C:/gravacoes',
         moduleName: 'Modulo 1',
-        segmentDurationSeconds: 42
+        segmentDurationSeconds: 42,
+        segmentPath: 'p/trecho-1.webm'
     });
 
     assert.strictEqual(group.nextSegmentIndex, 0);
     assert.strictEqual(group.totalRecordedSeconds, 42);
+    assert.deepStrictEqual(group.segmentPaths, ['p/trecho-1.webm']);
 
     const groups = await self.A3RecordingGroups.getGroups();
     assert.ok(groups['aula-2'], 'grupo deve permanecer aberto (sem closeGroup)');
 });
 
+test('bumpSegmentIndex só avança o índice, sem mexer na duração', async () => {
+    await createGroup('aula-2b', { title: 'Aula', segmentDurationSeconds: 42, segmentPath: 'p/1.webm' });
+    await bumpSegmentIndex('aula-2b');
+
+    const groups = await self.A3RecordingGroups.getGroups();
+    assert.strictEqual(groups['aula-2b'].nextSegmentIndex, 1);
+    assert.strictEqual(groups['aula-2b'].totalRecordedSeconds, 42);
+});
+
 test('segunda parada incompleta da mesma aula avança o segmento existente', async () => {
-    await createGroup('aula-3', { title: 'Aula 3', segmentDurationSeconds: 100 });
-    await advanceSegment('aula-3', 55);
+    await createGroup('aula-3', { title: 'Aula 3', segmentDurationSeconds: 100, segmentPath: 'p/1.webm' });
+    await addSegmentPath('aula-3', 'p/2.webm', 55);
 
     const groups = await self.A3RecordingGroups.getGroups();
     assert.strictEqual(groups['aula-3'].nextSegmentIndex, 1);

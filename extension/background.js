@@ -869,7 +869,8 @@ async function reconciliarSessaoOrfa() {
 
                 // Era um "Parar" deliberado que nao terminou de subir
                 // (crash durante o upload) - finaliza como segmento
-                // final, fechando o grupo se um existir.
+                // final, levando junto os trechos anteriores ja'
+                // enviados so' pro Storage, e fecha o grupo.
 
                 await enviarParaSupabase({
                     title: marcador.title,
@@ -878,7 +879,8 @@ async function reconciliarSessaoOrfa() {
                     audioBlob,
                     recordingGroupId: group ? group.recordingGroupId : null,
                     segmentIndex: group ? group.nextSegmentIndex : null,
-                    isFinal: true
+                    isFinal: true,
+                    segmentStoragePaths: group ? (group.segmentPaths || []) : []
                 });
 
                 if (group) {
@@ -887,8 +889,9 @@ async function reconciliarSessaoOrfa() {
 
             } else {
 
-                // Interrupcao abrupta no meio de uma gravacao - sobe
-                // como segmento comum (nao final) do grupo.
+                // Interrupcao abrupta no meio de uma gravacao - sobe o
+                // trecho SO' pro Storage e guarda o caminho no grupo
+                // (nada em audio_files ate' a aula ser finalizada).
 
                 // A duracao exata do segmento recuperado e' desconhecida
                 // (o IndexedDB so' guarda os blobs), mas o MediaRecorder
@@ -898,45 +901,31 @@ async function reconciliarSessaoOrfa() {
                 // quantos minutos foram capturados (nunca usada para a
                 // decisao de isFinal).
                 const duracaoAproximadaSegundos = chunks.length * 30;
-                const grupoJaExistia = !!group;
+
+                const caminhoTrecho = await subirTrechoIncompleto({
+                    title: marcador.title,
+                    moduleName: marcador.moduleName,
+                    filename,
+                    audioBlob
+                });
 
                 if (!group) {
                     group = await A3RecordingGroups.createGroup(marcador.lessonKey, {
                         ...marcador,
-                        segmentDurationSeconds: duracaoAproximadaSegundos
+                        segmentDurationSeconds: duracaoAproximadaSegundos,
+                        segmentPath: caminhoTrecho
                     });
+                    // Grupo recem-criado ja' nasce com esse trecho
+                    // (duracao + caminho) contabilizado — so' avanca o
+                    // indice do proximo segmento.
+                    await A3RecordingGroups.bumpSegmentIndex(marcador.lessonKey);
+                } else {
+                    await A3RecordingGroups.addSegmentPath(
+                        marcador.lessonKey,
+                        caminhoTrecho,
+                        duracaoAproximadaSegundos
+                    );
                 }
-
-                const segmentIndexParaEnvio = group.nextSegmentIndex;
-
-                // Total gravado ate' agora (pra "duration" do audio_files e
-                // pro aviso de aula incompleta). Grupo recem-criado ja'
-                // nasce com totalRecordedSeconds = esse primeiro segmento;
-                // grupo existente ainda nao inclui esse segmento (o
-                // advanceSegment que soma roda so' depois do upload).
-                const totalGravadoAteAgora = grupoJaExistia
-                    ? group.totalRecordedSeconds + duracaoAproximadaSegundos
-                    : group.totalRecordedSeconds;
-
-                await enviarParaSupabase({
-                    title: marcador.title,
-                    moduleName: marcador.moduleName,
-                    filename,
-                    audioBlob,
-                    recordingGroupId: group.recordingGroupId,
-                    segmentIndex: segmentIndexParaEnvio,
-                    isFinal: false,
-                    durationSeconds: totalGravadoAteAgora
-                });
-
-                // Avanca o indice do proximo segmento sempre; so' soma a
-                // duracao de novo quando o grupo ja existia (um grupo
-                // recem-criado ja nasce com a duracao desse primeiro
-                // segmento contabilizada, somar de novo dobraria o total).
-                await A3RecordingGroups.advanceSegment(
-                    marcador.lessonKey,
-                    grupoJaExistia ? duracaoAproximadaSegundos : 0
-                );
 
                 try {
 
@@ -998,38 +987,82 @@ async function varrerGruposExpirados() {
             try {
 
                 const token = await A3Session.getValidAccessToken();
+                const user = await A3Session.getCurrentUser();
 
-                if (!token) {
+                if (!token || !user) {
                     continue;
                 }
 
-                const segmentos = await A3Supabase.restSelect(
-                    "audio_files",
-                    `select=id&recording_group_id=eq.${grupo.recordingGroupId}&order=segment_index.desc&limit=1`,
-                    token
-                );
+                // Sob a Opção B, uma gravação incompleta não tem NENHUMA
+                // linha em audio_files — só os caminhos dos trechos no
+                // Storage, em grupo.segmentPaths. Ao expirar sem retomada,
+                // criamos UMA linha final a partir desses trechos (o
+                // último vira o storage_path; os anteriores entram em
+                // segment_storage_paths) + o job, para o worker juntar e
+                // transcrever o que já foi gravado.
+                const caminhos = grupo.segmentPaths || [];
 
-                const ultimoSegmento = segmentos[0];
+                if (caminhos.length) {
 
-                if (ultimoSegmento) {
+                    const ultimoCaminho = caminhos[caminhos.length - 1];
+                    const anteriores = caminhos.slice(0, -1);
+                    const nomeArquivo = ultimoCaminho.split("/").pop() || "aula.webm";
 
-                    await A3Supabase.restUpdate(
+                    const selection = await resolverCursoModulo(
+                        grupo.title,
+                        token,
+                        grupo.moduleName
+                    );
+
+                    const lessonRow = await A3Supabase.restInsert(
+                        "lessons",
+                        {
+                            module_id: selection.moduleId,
+                            lesson_number: selection.lessonNumber,
+                            title: selection.lessonTitle
+                        },
+                        token
+                    ).catch(async () => {
+                        const existing = await A3Supabase.restSelect(
+                            "lessons",
+                            `select=id&module_id=eq.${selection.moduleId}&lesson_number=eq.${selection.lessonNumber}`,
+                            token
+                        );
+                        return existing[0];
+                    });
+
+                    const audioFileRow = await A3Supabase.restInsert(
                         "audio_files",
-                        `id=eq.${ultimoSegmento.id}`,
-                        { is_final: true },
+                        {
+                            course_id: selection.courseId,
+                            module_id: selection.moduleId,
+                            lesson_id: lessonRow.id,
+                            uploaded_by: user.id,
+                            storage_path: ultimoCaminho,
+                            filename: nomeArquivo,
+                            mime_type: "audio/webm",
+                            status: "uploaded",
+                            recording_group_id: grupo.recordingGroupId,
+                            segment_index: grupo.nextSegmentIndex ?? caminhos.length,
+                            is_final: true,
+                            duration: grupo.totalRecordedSeconds ?? null,
+                            ...(anteriores.length
+                                ? { segment_storage_paths: anteriores }
+                                : {})
+                        },
                         token
                     );
 
                     await A3Supabase.restInsert(
                         "transcription_jobs",
                         {
-                            audio_file_id: ultimoSegmento.id,
+                            audio_file_id: audioFileRow.id,
                             status: "pending"
                         },
                         token
                     );
 
-                    console.log(`A3-OS Recorder: grupo expirado (${grupo.lessonKey}) fechado automaticamente após 7 dias.`);
+                    console.log(`A3-OS Recorder: grupo expirado (${grupo.lessonKey}) finalizado automaticamente após 7 dias com ${caminhos.length} trecho(s).`);
                 }
 
                 await A3RecordingGroups.closeGroup(grupo.lessonKey);
@@ -1511,16 +1544,10 @@ async function buscarDuracaoEsperada(title, moduleName, token) {
 // "Parar" e a reconciliação de sessões interrompidas)
 // ================================================================
 
-async function enviarParaSupabase({
-    title,
-    moduleName,
-    filename,
-    audioBlob,
-    recordingGroupId,
-    segmentIndex,
-    isFinal,
-    durationSeconds
-}) {
+// Resolve curso/módulo/aula e sobe o áudio pro Storage. Não toca em
+// audio_files — é o passo comum entre o trecho de gravação incompleta
+// (que para aqui) e o envio final.
+async function subirAudioParaStorage({ title, moduleName, filename, audioBlob }) {
 
     const token = await A3Session.getValidAccessToken();
     const user = await A3Session.getCurrentUser();
@@ -1561,6 +1588,42 @@ async function enviarParaSupabase({
 
     await A3Supabase.uploadToStorage("audio", storagePath, audioBlob, token);
 
+    return { token, user, selection, lessonRow, storagePath };
+}
+
+// Trecho de uma gravação incompleta ("Parar mesmo assim"): sobe SÓ pro
+// Storage. Não cria linha em audio_files nem job — nada aparece "no
+// banco" até a aula ser finalizada. Retorna o caminho no Storage, que
+// o chamador guarda no grupo (chrome.storage). Quando o segmento final
+// subir, a lista inteira entra em audio_files.segment_storage_paths e
+// o worker baixa todos os trechos + o final e junta com ffmpeg.
+async function subirTrechoIncompleto({ title, moduleName, filename, audioBlob }) {
+
+    const { storagePath } = await subirAudioParaStorage({
+        title,
+        moduleName,
+        filename,
+        audioBlob
+    });
+
+    return storagePath;
+}
+
+async function enviarParaSupabase({
+    title,
+    moduleName,
+    filename,
+    audioBlob,
+    recordingGroupId,
+    segmentIndex,
+    isFinal,
+    durationSeconds,
+    segmentStoragePaths
+}) {
+
+    const { token, user, selection, lessonRow, storagePath } =
+        await subirAudioParaStorage({ title, moduleName, filename, audioBlob });
+
     const audioFileRow = await A3Supabase.restInsert(
         "audio_files",
         {
@@ -1582,7 +1645,13 @@ async function enviarParaSupabase({
             // fica nulo pra sempre e o aviso de aula incompleta mostra
             // "0:00" gravados. Pro segmento final, quem preenche a
             // duracao real (a partir do arquivo) e' o worker mesmo.
-            ...(isFinal ? {} : { duration: durationSeconds ?? null })
+            ...(isFinal ? {} : { duration: durationSeconds ?? null }),
+            // Trechos anteriores desta aula que subiram só pro Storage
+            // (gravação retomada). O worker baixa cada um + este áudio
+            // e junta na ordem antes de transcrever.
+            ...(segmentStoragePaths && segmentStoragePaths.length
+                ? { segment_storage_paths: segmentStoragePaths }
+                : {})
         },
         token
     );
@@ -1949,7 +2018,11 @@ chrome.runtime.onMessage.addListener(
                                 audioBlob,
                                 recordingGroupId: existingGroup ? existingGroup.recordingGroupId : null,
                                 segmentIndex: existingGroup ? existingGroup.nextSegmentIndex : null,
-                                isFinal: true
+                                isFinal: true,
+                                // Leva junto todos os trechos anteriores
+                                // desta aula que subiram só pro Storage —
+                                // é a única linha em audio_files do grupo.
+                                segmentStoragePaths: existingGroup ? (existingGroup.segmentPaths || []) : []
                             });
 
                             if (existingGroup) {
@@ -1958,10 +2031,11 @@ chrome.runtime.onMessage.addListener(
 
                         } else {
 
-                            // Parada incompleta confirmada (isFinal === false). O grupo
-                            // precisa existir/ser criado ANTES do upload, senao o segmento
-                            // sobe com recording_group_id = NULL e fica orfao, nunca sendo
-                            // mesclado com a gravacao seguinte (mesmo padrao usado em
+                            // Parada incompleta confirmada (isFinal === false). Sob a
+                            // Opção B, o trecho sobe SÓ pro Storage e o caminho fica
+                            // guardado no grupo (chrome.storage) — nada em audio_files
+                            // até a aula ser finalizada. O grupo precisa existir/ser
+                            // criado para acumular os caminhos (mesmo padrão usado em
                             // reconciliarSessaoOrfa).
 
                             const startedAt = currentRecording.startedAt;
@@ -1972,49 +2046,35 @@ chrome.runtime.onMessage.addListener(
                                 // reconciliarSessaoOrfa (timeslice de 30s) em vez de cair em 0.
                                 : message.chunks.length * 30;
 
+                            const caminhoTrecho = await subirTrechoIncompleto({
+                                title: currentRecording.title,
+                                moduleName: currentRecording.moduleName,
+                                filename: message.filename,
+                                audioBlob
+                            });
+
                             if (!existingGroup) {
 
-                                const grupo = await A3RecordingGroups.createGroup(lessonKey, {
+                                await A3RecordingGroups.createGroup(lessonKey, {
                                     title: currentRecording.title,
                                     outputFolder: currentRecording.outputFolder,
                                     moduleName: currentRecording.moduleName,
-                                    segmentDurationSeconds: duracaoSegmentoSegundos
+                                    segmentDurationSeconds: duracaoSegmentoSegundos,
+                                    segmentPath: caminhoTrecho
                                 });
 
-                                await enviarParaSupabase({
-                                    title: currentRecording.title,
-                                    moduleName: currentRecording.moduleName,
-                                    filename: message.filename,
-                                    audioBlob,
-                                    recordingGroupId: grupo.recordingGroupId,
-                                    segmentIndex: grupo.nextSegmentIndex,
-                                    isFinal: false,
-                                    // Grupo recem-criado ja' nasce com
-                                    // totalRecordedSeconds = esse primeiro
-                                    // segmento.
-                                    durationSeconds: grupo.totalRecordedSeconds
-                                });
-
-                                // So' avanca o indice do proximo segmento —
-                                // a duracao desse primeiro segmento ja foi
-                                // contabilizada na criacao do grupo, somar
-                                // de novo aqui dobraria o total.
-                                await A3RecordingGroups.advanceSegment(lessonKey, 0);
+                                // Grupo recem-criado ja' nasce com esse trecho
+                                // (duracao + caminho) contabilizado — so' avanca
+                                // o indice do proximo segmento.
+                                await A3RecordingGroups.bumpSegmentIndex(lessonKey);
 
                             } else {
 
-                                await enviarParaSupabase({
-                                    title: currentRecording.title,
-                                    moduleName: currentRecording.moduleName,
-                                    filename: message.filename,
-                                    audioBlob,
-                                    recordingGroupId: existingGroup.recordingGroupId,
-                                    segmentIndex: existingGroup.nextSegmentIndex,
-                                    isFinal: false,
-                                    durationSeconds: existingGroup.totalRecordedSeconds + duracaoSegmentoSegundos
-                                });
-
-                                await A3RecordingGroups.advanceSegment(lessonKey, duracaoSegmentoSegundos);
+                                await A3RecordingGroups.addSegmentPath(
+                                    lessonKey,
+                                    caminhoTrecho,
+                                    duracaoSegmentoSegundos
+                                );
                             }
                         }
 
