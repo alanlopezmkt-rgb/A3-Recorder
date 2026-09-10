@@ -202,8 +202,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 banner.classList.add("info-banner-warning");
 
                 banner.innerHTML =
-                    `${ICONE_AVISO_SVG}<span>Esta aula está incompleta: você já gravou ${formatarDuracao(grupoResp.grupoAberto.totalRecordedSeconds)}. ` +
-                    `Clique em GRAVAR para continuar de onde parou — os pedaços serão unidos automaticamente.</span>`;
+                    `${ICONE_AVISO_SVG}<span>Esta aula está incompleta: foi gravado até ${formatarTimestamp(grupoResp.grupoAberto.totalRecordedSeconds)}. ` +
+                    `Clique em GRAVAR para continuar a partir daí — os pedaços serão unidos automaticamente.</span>`;
 
                 banner.hidden = false;
             }
@@ -549,7 +549,7 @@ async function iniciarGravacao() {
             if (banner) {
                 banner.classList.remove("info-banner-warning");
                 banner.textContent =
-                    `Esta aula já tem ${formatarDuracao(response.grupoAberto.totalRecordedSeconds)} gravados de uma sessão ` +
+                    `Esta aula já tinha ${formatarTimestamp(response.grupoAberto.totalRecordedSeconds)} gravados de uma sessão ` +
                     `anterior. Esta gravação vai continuar a partir daí — ao terminar, os pedaços serão unidos automaticamente.`;
                 banner.hidden = false;
             }
@@ -1143,7 +1143,7 @@ function renderHistoryItem(item) {
 
     const avisoIncompleta = statusChave !== "incompleta"
         ? ""
-        : `<div class="history-item-warning">${ICONE_AVISO_SVG}<span>Essa aula ainda não está completa. Continue gravando a mesma aula para juntar automaticamente com o que já foi salvo — nada foi perdido.</span></div>`;
+        : `<div class="history-item-warning">${ICONE_AVISO_SVG}<span>Foi gravado até ${formatarTimestamp(item.duration)}. Comece a gravar de novo a partir daí — os pedaços serão unidos automaticamente, nada foi perdido.</span></div>`;
 
     return `
         <div class="history-item">
@@ -1157,6 +1157,19 @@ function renderHistoryItem(item) {
             ${avisoIncompleta}
         </div>
     `;
+}
+
+function formatarTimestamp(segundos) {
+
+    if (!segundos && segundos !== 0) {
+        return "0:00";
+    }
+
+    const totalSegundos = Math.round(Number(segundos));
+    const minutos = Math.floor(totalSegundos / 60);
+    const restoSegundos = totalSegundos % 60;
+
+    return `${minutos}:${String(restoSegundos).padStart(2, "0")}`;
 }
 
 function formatarMinutos(segundos) {
