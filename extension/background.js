@@ -107,6 +107,138 @@ const ICON_WARNING = {
     "128": "icons/icon-warning-128.png"
 };
 
+// ================================================================
+// ATUALIZACAO AUTOMATICA DO ICONE (aula incompleta) — antes so'
+// rodava quando o popup era aberto, entao o icone so' avisava depois
+// de clicar na extensao. Detecta o titulo/modulo da aba (mesmo metodo
+// que o popup usa) e compara com os grupos de gravacao abertos, sem
+// depender do popup estar aberto.
+// ================================================================
+
+async function detectarAulaNaAba(tabId) {
+
+    try {
+
+        const result = await chrome.scripting.executeScript({
+
+            target: { tabId },
+
+            func: () => {
+
+                const h1 = document.querySelector("h1");
+
+                const title =
+                    h1 && h1.innerText && h1.innerText.trim()
+                        ? h1.innerText.trim()
+                        : (document.title || "");
+
+                const IGNORAR = ["voltar", "avançar", "avancar", "próxima", "proxima", "anterior"];
+
+                const candidatos = Array.from(
+                    document.querySelectorAll(".text-foreground")
+                ).filter((el) => {
+                    const texto = (el.innerText || "").trim();
+                    if (!texto || IGNORAR.includes(texto.toLowerCase())) {
+                        return false;
+                    }
+                    if (h1 && (el === h1 || el.contains(h1) || h1.contains(el))) {
+                        return false;
+                    }
+                    if (h1) {
+                        const posicao = h1.compareDocumentPosition(el);
+                        return !!(posicao & Node.DOCUMENT_POSITION_PRECEDING);
+                    }
+                    return true;
+                });
+
+                const moduloElement = candidatos[candidatos.length - 1] || null;
+
+                const moduleName =
+                    moduloElement && moduloElement.innerText && moduloElement.innerText.trim()
+                        ? moduloElement.innerText.trim()
+                        : null;
+
+                return { title, moduleName };
+            }
+        });
+
+        return result?.[0]?.result || null;
+
+    } catch (error) {
+
+        // Aba sem permissao (chrome://, pagina de outra extensao,
+        // ainda carregando) — nao e' uma aula, ignora silenciosamente.
+        return null;
+    }
+}
+
+async function atualizarIconeDaAba(tabId) {
+
+    if (tabId === undefined || tabId === null || tabId < 0) {
+        return;
+    }
+
+    try {
+
+        const deteccao = await detectarAulaNaAba(tabId);
+
+        if (!deteccao || !deteccao.title) {
+            chrome.action.setIcon({ tabId, path: ICON_NORMAL });
+            return;
+        }
+
+        const lessonKey = A3LessonKey.lessonKey(deteccao.title, deteccao.moduleName);
+        const groups = await A3RecordingGroups.getGroups();
+        const grupoAberto = groups[lessonKey] || null;
+
+        chrome.action.setIcon({
+            tabId,
+            path: grupoAberto ? ICON_WARNING : ICON_NORMAL
+        });
+
+    } catch (error) {
+
+        console.error("A3-OS: falha ao atualizar icone automaticamente para a aba", tabId, error);
+    }
+}
+
+// Cobre troca de aba e navegacao/carregamento — o caso comum de abrir
+// ou trocar de aula sem precisar clicar na extensao pra descobrir que
+// ficou incompleta.
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+    atualizarIconeDaAba(tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === "complete" && tab.active) {
+        atualizarIconeDaAba(tabId);
+    }
+});
+
+// A plataforma de aulas e' uma SPA — trocar de aula dentro dela as
+// vezes so' troca o conteudo da pagina, sem disparar onUpdated
+// "complete" de novo. Um alarme periodico cobre esse caso, olhando so'
+// as abas ativas de cada janela aberta.
+const ALARME_ICONE_AULA = "a3-atualizar-icone-aula";
+
+chrome.alarms.create(ALARME_ICONE_AULA, { periodInMinutes: 0.5 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+
+    if (alarm.name !== ALARME_ICONE_AULA) {
+        return;
+    }
+
+    (async () => {
+
+        const abasAtivas = await chrome.tabs.query({ active: true });
+
+        for (const aba of abasAtivas) {
+            atualizarIconeDaAba(aba.id);
+        }
+    })();
+});
+
 
 // ================================================================
 // FORMATACAO DE DURACAO PARA NOTIFICACOES
