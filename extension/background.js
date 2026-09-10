@@ -1587,6 +1587,44 @@ chrome.runtime.onMessage.addListener(
 
 
         // ========================================================
+        // GRUPO ABERTO (consulta so'-leitura, usada pelo popup pra
+        // avisar de aula incompleta assim que abre, sem precisar
+        // clicar em GRAVAR primeiro)
+        // ========================================================
+
+        if (message.action === "get-grupo-aberto") {
+
+            (async () => {
+
+                try {
+
+                    const lessonKey = A3LessonKey.lessonKey(
+                        message.title,
+                        message.moduleName
+                    );
+
+                    const groups = await A3RecordingGroups.getGroups();
+                    const grupoAberto = groups[lessonKey] || null;
+
+                    sendResponse({
+                        grupoAberto: grupoAberto
+                            ? { totalRecordedSeconds: grupoAberto.totalRecordedSeconds }
+                            : null
+                    });
+
+                } catch (error) {
+
+                    console.error("A3-OS: falha ao consultar grupo aberto ao abrir popup, seguindo sem aviso:", error);
+                    sendResponse({ grupoAberto: null });
+                }
+
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
         // DURACAO ESPERADA (consulta so'-leitura, usada pelo popup)
         // ========================================================
 

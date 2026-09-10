@@ -330,6 +330,13 @@ body {
     color: var(--text-secondary, inherit);
 }
 
+.info-banner.info-banner-warning {
+    background: var(--status-recording-bg);
+    border-color: var(--status-recording-border);
+    color: var(--status-recording-text);
+    font-weight: 500;
+}
+
 /* ================================================================
    CAMPOS
    ================================================================ */

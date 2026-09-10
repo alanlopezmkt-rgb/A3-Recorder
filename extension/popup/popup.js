@@ -175,6 +175,45 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
     // ============================================================
+    // AVISO DE AULA INCOMPLETA (grupo aberto) — mostrado assim que a
+    // extensão abre, sem precisar clicar em GRAVAR ou em Histórico
+    // pra descobrir que falta terminar essa aula
+    // ============================================================
+
+    try {
+
+        const grupoResp = await chrome.runtime.sendMessage({
+            action: "get-grupo-aberto",
+            title: titleElement.textContent,
+            moduleName: moduloDetectado
+        });
+
+        if (grupoResp?.grupoAberto) {
+
+            const banner = document.getElementById("groupBanner");
+
+            if (banner) {
+
+                banner.classList.add("info-banner-warning");
+
+                banner.textContent =
+                    `⚠ Esta aula está incompleta: você já gravou ${formatarDuracao(grupoResp.grupoAberto.totalRecordedSeconds)}. ` +
+                    `Clique em GRAVAR para continuar de onde parou — os pedaços serão unidos automaticamente.`;
+
+                banner.hidden = false;
+            }
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao consultar grupo aberto:",
+            error
+        );
+    }
+
+
+    // ============================================================
     // STATUS DA GRAVAÇÃO
     // ============================================================
 
@@ -503,6 +542,7 @@ async function iniciarGravacao() {
         if (response.grupoAberto) {
             const banner = document.getElementById("groupBanner");
             if (banner) {
+                banner.classList.remove("info-banner-warning");
                 banner.textContent =
                     `Esta aula já tem ${formatarDuracao(response.grupoAberto.totalRecordedSeconds)} gravados de uma sessão ` +
                     `anterior. Esta gravação vai continuar a partir daí — ao terminar, os pedaços serão unidos automaticamente.`;
@@ -774,6 +814,7 @@ function atualizarInterfaceParado() {
     if (groupBanner) {
         groupBanner.hidden = true;
         groupBanner.textContent = "";
+        groupBanner.classList.remove("info-banner-warning");
     }
 
     const button =
