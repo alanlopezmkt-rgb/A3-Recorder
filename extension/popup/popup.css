@@ -1104,6 +1104,10 @@ body {
     z-index: 1000;
 }
 
+.modal-overlay[hidden] {
+    display: none;
+}
+
 .modal-box {
     background: var(--card-bg, #1e2321);
     border-radius: 10px;
