@@ -1004,7 +1004,8 @@ body {
 }
 
 .history-item-status.status-failed,
-.history-item-status.status-suspeita {
+.history-item-status.status-suspeita,
+.history-item-status.status-incompleta {
     background: var(--status-recording-bg);
     color: var(--status-recording-text);
 }

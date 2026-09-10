@@ -933,7 +933,8 @@ const HISTORY_STATUS_LABEL = {
     unsynced: "Transcrito, mas não sincronizado",
     failed: "Falhou",
     suspeita: "Gravação incompleta",
-    longa: "Possível pausa na gravação"
+    longa: "Possível pausa na gravação",
+    incompleta: "Gravação incompleta — continue gravando"
 };
 
 // Filtro de data ativo no histórico ({ modo: "all" }, "today", "yesterday",
@@ -982,6 +983,17 @@ function calcularIntervaloHistorico(filtro) {
 }
 
 function statusEfetivo(item) {
+
+    // Segmento de uma gravação incompleta ("Parar mesmo assim") que ainda
+    // não foi unido a um envio final — não é "pendente de transcrição" (o
+    // que sugeriria que a aula já foi processada), é uma aula que ainda
+    // precisa ser completada. Prevalece sobre tudo, inclusive duração
+    // suspeita, porque enquanto o grupo estiver aberto isso nunca vai
+    // acontecer (o worker não roda a checagem de duração pra segmento
+    // intermediário — ver Transcritor Local/supabase_worker.py).
+    if (item.is_final === false) {
+        return "incompleta";
+    }
 
     // Duração real bem diferente da esperada pra essa aula — prevalece
     // sobre o status de sincronização, já que é o aviso mais importante
@@ -1083,6 +1095,10 @@ function renderHistoryItem(item) {
             ? `<div class="history-item-warning history-item-warning-longa">⚠ Gravação mais longa que o esperado: ficou com ${formatarMinutos(item.duration)}, mas essa aula costuma ter ${formatarMinutos(item.duracao_esperada_segundos)}. Provavelmente ficou pausada no meio — o áudio deve estar completo, mas confira se não tem um trecho grande de silêncio antes de gerar o resumo.</div>`
             : `<div class="history-item-warning">⚠ Minutagem da gravação incorreta: ficou com ${formatarMinutos(item.duration)}, mas essa aula tem ${formatarMinutos(item.duracao_esperada_segundos)} de duração real. Grave de novo.</div>`;
 
+    const avisoIncompleta = statusChave !== "incompleta"
+        ? ""
+        : `<div class="history-item-warning">⚠ Essa aula ainda não está completa. Continue gravando a mesma aula para juntar automaticamente com o que já foi salvo — nada foi perdido.</div>`;
+
     return `
         <div class="history-item">
             <div class="history-item-title">${escapeHtml(titulo)}</div>
@@ -1092,6 +1108,7 @@ function renderHistoryItem(item) {
                 <span class="history-item-status status-${statusChave}">${escapeHtml(statusLabel)}</span>
             </div>
             ${avisoSuspeita}
+            ${avisoIncompleta}
         </div>
     `;
 }

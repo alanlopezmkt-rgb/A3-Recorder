@@ -2009,7 +2009,7 @@ chrome.runtime.onMessage.addListener(
 
                     const history = await A3Supabase.restSelect(
                         "audio_files",
-                        `select=id,filename,created_at,status,duration,duracao_suspeita,duracao_tipo,duracao_esperada_segundos,lesson_id,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}${filtroData}&order=created_at.desc&limit=${limite}`,
+                        `select=id,filename,created_at,status,duration,is_final,duracao_suspeita,duracao_tipo,duracao_esperada_segundos,lesson_id,lessons(title,lesson_number),modules(name,module_number),courses(name),knowledge_sync_status(status,created_at)&uploaded_by=eq.${user.id}${filtroData}&order=created_at.desc&limit=${limite}`,
                         token
                     );
 
