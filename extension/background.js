@@ -172,6 +172,48 @@ async function detectarAulaNaAba(tabId) {
     }
 }
 
+// A gravação captura o áudio da aba em tempo real (1 minuto gravado =
+// 1 minuto de relógio), mas se o usuário assiste em velocidade
+// diferente de 1x (ex.: 1.5x), 1 minuto de relógio cobre 1.5 minuto de
+// conteúdo da aula. Sem isso, uma aula assistida inteira a 1.5x aparece
+// como "76% gravada" (tempo de relógio ÷ duração da aula a 1x) mesmo
+// tendo sido concluída — e o aviso de "duração menor que o esperado"
+// dispara à toa. Lê o playbackRate do <video> da aba pra converter
+// segundos-de-relógio em segundos-de-conteúdo-coberto.
+async function detectarVelocidadeReproducao(tabId) {
+
+    if (tabId === undefined || tabId === null || tabId < 0) {
+        return 1;
+    }
+
+    try {
+
+        const result = await chrome.scripting.executeScript({
+
+            target: { tabId },
+
+            func: () => {
+                const video = document.querySelector("video");
+                const rate = video && typeof video.playbackRate === "number"
+                    ? video.playbackRate
+                    : 1;
+                // Sanidade: um playbackRate zerado/negativo/absurdo (bug da
+                // página, vídeo ainda não inicializado) nunca deve distorcer
+                // a minutagem — melhor assumir 1x do que multiplicar errado.
+                return (rate > 0 && rate <= 4) ? rate : 1;
+            }
+        });
+
+        return result?.[0]?.result || 1;
+
+    } catch (error) {
+
+        // Aba fechada, sem permissão, sem <video> — assume 1x (comportamento
+        // anterior), nunca quebra o fluxo de parar a gravação por causa disso.
+        return 1;
+    }
+}
+
 async function atualizarIconeDaAba(tabId) {
 
     if (tabId === undefined || tabId === null || tabId < 0) {
@@ -600,6 +642,12 @@ async function iniciarGravacao(
 
                 sessionId:
                     sessionId,
+
+                // Guardado pra, ao parar, ler a velocidade de reprodução
+                // (video.playbackRate) da própria aba e corrigir a
+                // minutagem gravada — ver detectarVelocidadeReproducao.
+                tabId:
+                    tab.id,
 
                 startedAt:
                     Date.now()
@@ -1999,6 +2047,25 @@ chrome.runtime.onMessage.addListener(
 
 
         // ========================================================
+        // VELOCIDADE DE REPRODUÇÃO (consulta so'-leitura, usada pelo
+        // popup antes de decidir se mostra o aviso de "gravou menos
+        // que o esperado" — ver detectarVelocidadeReproducao)
+        // ========================================================
+
+        if (message.action === "get-playback-rate") {
+
+            (async () => {
+                const estado = await carregarEstado();
+                const tabId = estado.currentRecording && estado.currentRecording.tabId;
+                const playbackRate = await detectarVelocidadeReproducao(tabId);
+                sendResponse({ playbackRate });
+            })();
+
+            return true;
+        }
+
+
+        // ========================================================
         // OFFSCREEN TERMINOU
         // ========================================================
 
@@ -2106,12 +2173,18 @@ chrome.runtime.onMessage.addListener(
                             // reconciliarSessaoOrfa).
 
                             const startedAt = currentRecording.startedAt;
-                            const duracaoSegmentoSegundos = startedAt
+                            const duracaoRelogioSegundos = startedAt
                                 ? Math.floor((Date.now() - startedAt) / 1000)
                                 // startedAt ausente (estado parcialmente restaurado / versao
                                 // antiga) - usa a mesma aproximacao por chunks de
                                 // reconciliarSessaoOrfa (timeslice de 30s) em vez de cair em 0.
                                 : message.chunks.length * 30;
+
+                            // Converte segundos-de-relogio em segundos-de-conteudo-coberto
+                            // (ver detectarVelocidadeReproducao) - sem isso, assistir a aula
+                            // inteira em 1.5x aparecia como gravacao incompleta.
+                            const playbackRate = await detectarVelocidadeReproducao(currentRecording.tabId);
+                            const duracaoSegmentoSegundos = Math.round(duracaoRelogioSegundos * playbackRate);
 
                             const caminhoTrecho = await subirTrechoIncompleto({
                                 title: currentRecording.title,

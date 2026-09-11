@@ -590,11 +590,12 @@ async function checarDuracaoAntesDeParar() {
     const tituloAula = document.getElementById("title")?.textContent || "aula";
     const moduleName = moduloDetectado;
 
-    let duracaoResp, elapsedResp;
+    let duracaoResp, elapsedResp, playbackResp;
     try {
-        [duracaoResp, elapsedResp] = await Promise.all([
+        [duracaoResp, elapsedResp, playbackResp] = await Promise.all([
             chrome.runtime.sendMessage({ action: "get-expected-duration", title: tituloAula, moduleName }),
-            chrome.runtime.sendMessage({ action: "get-elapsed-seconds" })
+            chrome.runtime.sendMessage({ action: "get-elapsed-seconds" }),
+            chrome.runtime.sendMessage({ action: "get-playback-rate" })
         ]);
     } catch (erro) {
         console.error("Falha ao consultar duração esperada/decorrida antes de parar:", erro);
@@ -603,16 +604,23 @@ async function checarDuracaoAntesDeParar() {
 
     const expectedDurationSeconds = duracaoResp && duracaoResp.expectedDurationSeconds;
     const elapsedSeconds = elapsedResp && elapsedResp.elapsedSeconds;
+    const playbackRate = (playbackResp && playbackResp.playbackRate) || 1;
 
     if (!expectedDurationSeconds || !elapsedSeconds) {
         return true; // sem dado de referência — segue direto (fail-open)
     }
 
-    if (elapsedSeconds >= expectedDurationSeconds * 0.95) {
+    // Assistir a aula em velocidade diferente de 1x (ex.: 1.5x) faz o tempo
+    // de relógio gravado ficar menor que a duração da aula, mesmo tendo
+    // assistido tudo — sem essa conversão, o aviso de "gravou menos que o
+    // esperado" dispararia à toa nesse caso.
+    const elapsedEquivalenteSegundos = Math.round(elapsedSeconds * playbackRate);
+
+    if (elapsedEquivalenteSegundos >= expectedDurationSeconds * 0.95) {
         return true;
     }
 
-    mostrarModalDuracao(elapsedSeconds, expectedDurationSeconds);
+    mostrarModalDuracao(elapsedEquivalenteSegundos, expectedDurationSeconds);
     return false;
 }
 
