@@ -1584,16 +1584,39 @@ async function buscarDuracaoEsperada(title, moduleName, token) {
     const aula = (
         await A3Supabase.restSelect(
             "lessons",
-            `select=expected_duration_seconds&module_id=eq.${mod.id}&lesson_number=eq.${lessonNumber}`,
+            `select=id,expected_duration_seconds&module_id=eq.${mod.id}&lesson_number=eq.${lessonNumber}`,
             token
         )
     )[0];
 
-    if (!aula || !aula.expected_duration_seconds) {
+    if (!aula) {
         return null;
     }
 
-    return { expectedDurationSeconds: aula.expected_duration_seconds };
+    return {
+        lessonId: aula.id,
+        expectedDurationSeconds: aula.expected_duration_seconds || null
+    };
+}
+
+// Verifica se a aula ja tem uma linha final (is_final:true) em
+// audio_files - usado pra esconder/fechar grupos incompletos que
+// ja foram finalizados manualmente ou pela varredura de expirados,
+// mas cujo registro em chrome.storage.local ainda nao foi limpo.
+async function aulaJaFinalizada(lessonId, token) {
+    if (!lessonId) {
+        return false;
+    }
+    try {
+        const rows = await A3Supabase.restSelect(
+            "audio_files",
+            `select=id&lesson_id=eq.${lessonId}&is_final=eq.true&limit=1`,
+            token
+        );
+        return rows.length > 0;
+    } catch (error) {
+        return false;
+    }
 }
 
 
@@ -1972,6 +1995,16 @@ chrome.runtime.onMessage.addListener(
                                     grupo.title, grupo.moduleName, token
                                 );
                                 expectedDurationSeconds = r ? r.expectedDurationSeconds : null;
+
+                                // A aula pode ja ter sido finalizada (ex.: pela
+                                // varredura de expirados ou uma correcao manual)
+                                // sem que o grupo local tenha sido fechado ainda.
+                                // Sem isso o popup mostra o item "incompleta" em
+                                // duplicidade com o item real do historico.
+                                if (r && r.lessonId && await aulaJaFinalizada(r.lessonId, token)) {
+                                    await A3RecordingGroups.closeGroup(lessonKey);
+                                    continue;
+                                }
                             } catch (e) {
                                 // sem duracao esperada — a barra fica sem porcentagem
                             }
