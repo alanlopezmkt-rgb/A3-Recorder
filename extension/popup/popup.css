@@ -24,9 +24,9 @@
 :root {
     --bg: #0a0b14;
     --bg-glow:
-        radial-gradient(circle at 15% -10%, rgba(124, 58, 237, .30), transparent 55%),
-        radial-gradient(circle at 100% 10%, rgba(59, 130, 246, .22), transparent 50%),
-        radial-gradient(circle at 30% 110%, rgba(236, 72, 153, .16), transparent 55%);
+        radial-gradient(circle at 15% -10%, rgba(24, 24, 27, .30), transparent 55%),
+        radial-gradient(circle at 100% 10%, rgba(39, 39, 42, .22), transparent 50%),
+        radial-gradient(circle at 30% 110%, rgba(63, 63, 70, .16), transparent 55%);
     --surface: rgba(255, 255, 255, 0.05);
     --surface-hover: rgba(255, 255, 255, 0.09);
     --border: rgba(255, 255, 255, 0.10);
@@ -36,9 +36,9 @@
     --text-secondary: #a1a1ae;
     --text-tertiary: #74748a;
 
-    --accent: #7c3aed;
-    --accent-2: #3b82f6;
-    --accent-pink: #ec4899;
+    --accent: #18181b;
+    --accent-2: #27272a;
+    --accent-pink: #3f3f46;
 
     --accent-blue: #3b82f6;
     --accent-cyan: #22c9dd;
@@ -47,7 +47,7 @@
     --accent-red-active: #8f1116;
     --accent-green: #2fbf71;
 
-    --focus-ring: #7c3aed;
+    --focus-ring: #52525b;
 
     --status-recording-bg: rgba(215, 25, 32, 0.1);
     --status-recording-border: rgba(215, 25, 32, 0.35);
@@ -75,7 +75,7 @@
 
     --accent-red-hover: #c8151c;
 
-    --focus-ring: #7c3aed;
+    --focus-ring: #52525b;
 
     --status-recording-bg: rgba(215, 25, 32, 0.08);
     --status-recording-border: rgba(215, 25, 32, 0.3);
@@ -643,7 +643,7 @@ body {
     height: 100%;
     border-radius: 999px;
 
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    background: linear-gradient(90deg, #a1a1aa, #71717a);
 
     transition: width 0.4s ease;
 }
@@ -751,7 +751,7 @@ body {
     border-radius: var(--radius);
 
     background: linear-gradient(115deg, var(--accent) 0%, var(--accent-2) 100%);
-    box-shadow: 0 10px 24px -12px rgba(124, 58, 237, .55);
+    box-shadow: 0 10px 24px -12px rgba(24, 24, 27, .55);
     color: #ffffff;
 
     font-size: 14px;
@@ -766,7 +766,7 @@ body {
 }
 
 .record-button:hover {
-    background: linear-gradient(115deg, #8b4bf0 0%, #4f8ff9 100%);
+    background: linear-gradient(115deg, #3f3f46 0%, #27272a 100%);
 }
 
 .record-button:active {
@@ -861,7 +861,7 @@ body {
 }
 
 .history-list {
-    max-height: 220px;
+    max-height: 320px;
     overflow-y: auto;
 
     display: flex;
@@ -908,7 +908,7 @@ body {
 .history-filter-btn.is-active {
     background: var(--accent-2);
     border-color: var(--accent-2);
-    color: var(--bg);
+    color: #ffffff;
 }
 
 .history-date-picker {
@@ -1012,8 +1012,8 @@ body {
 
 .history-item-status.status-uploaded,
 .history-item-status.status-processing {
-    background: rgba(124, 58, 237, 0.14);
-    color: var(--accent);
+    background: rgba(63, 63, 70, 0.25);
+    color: var(--text-secondary);
 }
 
 .history-item-status.status-unsynced {
