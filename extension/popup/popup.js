@@ -1211,7 +1211,6 @@ function renderGrupoIncompletoItem(grupo) {
                 <span>Gravação em andamento</span>
                 <span class="history-item-status status-incompleta">Gravação incompleta</span>
             </div>
-            <div class="history-item-warning">${ICONE_AVISO_SVG}<span>Ainda não foi pro banco. Grave esta aula de novo a partir de ${formatarTimestamp(gravado)} — quando você terminar, os pedaços são unidos automaticamente e só aí a aula entra no banco.</span></div>
             ${barra}
         </div>
     `;
